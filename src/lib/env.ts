@@ -16,10 +16,13 @@ export function loadEnv(root: string = process.cwd()): void {
     if (!m) continue;
     const key = m[1]!;
     let value = (m[2] ?? '').trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
+    const quote = value[0];
+    if (quote === '"' || quote === "'") {
+      // 引用符つき: 閉じ引用符までを値にし、その後ろ（コメントなど）は無視
+      const end = value.indexOf(quote, 1);
+      value = end > 0 ? value.slice(1, end) : value.slice(1);
     } else {
-      const hash = value.indexOf(' #');
+      const hash = value.search(/\s#/);
       if (hash >= 0) value = value.slice(0, hash).trim();
     }
     if (process.env[key] === undefined) process.env[key] = value;

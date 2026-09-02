@@ -30,6 +30,18 @@ export interface TargetConfig {
   area: string;
   areaAliases: string[];
   competitors: string[];
+  /**
+   * 検索エンジンに渡す利用者位置のヒント（任意）。既定は国 JP とタイムゾーンのみ。
+   * 例: { "city": "Osaka", "region": "Osaka", "latitude": 34.6937, "longitude": 135.5023 }
+   */
+  searchLocation?: {
+    country?: string;
+    city?: string;
+    region?: string;
+    timezone?: string;
+    latitude?: number;
+    longitude?: number;
+  };
 }
 
 export interface Question {

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ScanMeta } from '../commands/scan.js';
 import { ownDomain } from './config.js';
-import { namesMatch, normalize } from './extract.js';
+import { isTargetName, namesMatch, normalize } from './extract.js';
 import { dateDir, readJsonFiles } from './runs.js';
 import { markOf, scoreOf, type Mark, type Score } from './score.js';
 import { ENGINES, engineLabel, type Extraction, type Question, type TargetConfig } from './types.js';
@@ -12,11 +12,15 @@ export interface EngineScore extends Score {
   label: string;
   model?: string;
   manual: boolean;
+  /** 有効な回答が 1 件以上ある質問の数 */
+  coveredQuestions: number;
 }
 
 export interface QuestionCell {
   engine: string;
   mark: Mark;
+  /** そのエンジン×質問にデータ（成功／失敗を問わず）があるか。手入力で未入力なら false */
+  measured: boolean;
   okRuns: number;
   mentionedRuns: number;
   citedRuns: number;
@@ -34,6 +38,8 @@ export interface CompetitorStat {
   name: string;
   /** 言及された回答数 */
   mentions: number;
+  /** うち、自社が出なかった回答での言及数 */
+  mentionsWhenTargetAbsent: number;
   byEngine: Record<string, number>;
   /** 回答文から抽出した理由（頻度順、重複除去） */
   reasons: string[];
@@ -64,8 +70,23 @@ export interface Aggregate {
   questionRows: QuestionRow[];
   competitors: CompetitorStat[];
   domains: DomainStat[];
-  totals: { answers: number; ok: number; errors: number; manual: number; scan: number };
+  totals: {
+    answers: number;
+    ok: number;
+    /** API 失敗など */
+    errors: number;
+    /** 費用上限で未実行 */
+    skipped: number;
+    manual: number;
+    scan: number;
+    /** 抽出方法の内訳 */
+    extractedWithClaude: number;
+    extractedRegexOnly: number;
+  };
+  extractModel?: string;
   meta?: ScanMeta;
+  /** 比較などの再計算用に元データも持つ */
+  extractions: Extraction[];
 }
 
 export function loadExtractions(slug: string, date: string, runDir: string): { extractions: Extraction[]; meta?: ScanMeta } {
@@ -76,7 +97,9 @@ export function loadExtractions(slug: string, date: string, runDir: string): { e
   return { extractions: [...scan, ...manual], meta };
 }
 
-function canonicalName(name: string, target: TargetConfig): { name: string; known: boolean } {
+/** 競合名を正規化する。自社（別名含む）なら null */
+function canonicalName(name: string, target: TargetConfig): { name: string; known: boolean } | null {
+  if (isTargetName(name, target) || namesMatch(target.name, name)) return null;
   for (const c of target.competitors) if (namesMatch(name, c)) return { name: c, known: true };
   return { name: name.trim(), known: false };
 }
@@ -112,6 +135,7 @@ export function buildAggregate(input: {
       label: engineLabel(e),
       model: models[e],
       manual: list.every((x) => x.source === 'manual'),
+      coveredQuestions: questions.filter((q) => list.some((x) => x.questionNo === q.no && x.status === 'ok')).length,
       ...scoreOf(list),
     };
   });
@@ -124,6 +148,7 @@ export function buildAggregate(input: {
       cells[e] = {
         engine: e,
         mark: m.mark,
+        measured: list.length > 0,
         okRuns: m.okRuns,
         mentionedRuns: m.mentionedRuns,
         citedRuns: list.filter((x) => x.status === 'ok' && x.citedOwnSite).length,
@@ -134,7 +159,7 @@ export function buildAggregate(input: {
   });
 
   // 競合: 回答ごとに1回カウント。理由は頻度順
-  const compMap = new Map<string, { mentions: number; byEngine: Record<string, number>; reasons: Map<string, number>; known: boolean }>();
+  const compMap = new Map<string, { mentions: number; absent: number; byEngine: Record<string, number>; reasons: Map<string, number>; known: boolean }>();
   for (const x of extractions) {
     if (x.status !== 'ok') continue;
     const seenInAnswer = new Set<string>();
@@ -144,20 +169,16 @@ export function buildAggregate(input: {
     ];
     for (const { name, reason } of names) {
       const canon = canonicalName(name, target);
-      if (!canon.name || normalize(canon.name) === normalize(target.name)) continue;
+      if (!canon || !canon.name) continue;
       const key = normalize(canon.name);
-      if (seenInAnswer.has(key)) {
-        if (reason) {
-          const entry = compMap.get(key)!;
-          entry.reasons.set(reason, (entry.reasons.get(reason) ?? 0) + 1);
-        }
-        continue;
-      }
-      seenInAnswer.add(key);
-      const entry = compMap.get(key) ?? { mentions: 0, byEngine: {}, reasons: new Map<string, number>(), known: canon.known };
-      entry.mentions++;
-      entry.byEngine[x.engine] = (entry.byEngine[x.engine] ?? 0) + 1;
+      const entry = compMap.get(key) ?? { mentions: 0, absent: 0, byEngine: {}, reasons: new Map<string, number>(), known: canon.known };
       if (reason) entry.reasons.set(reason, (entry.reasons.get(reason) ?? 0) + 1);
+      if (!seenInAnswer.has(key)) {
+        seenInAnswer.add(key);
+        entry.mentions++;
+        if (!x.mentioned) entry.absent++;
+        entry.byEngine[x.engine] = (entry.byEngine[x.engine] ?? 0) + 1;
+      }
       compMap.set(key, entry);
     }
   }
@@ -168,7 +189,7 @@ export function buildAggregate(input: {
     const reasons = [...entry.reasons.entries()]
       .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
       .map(([r]) => r);
-    competitors.push({ name: displayName, mentions: entry.mentions, byEngine: entry.byEngine, reasons, isKnownCompetitor: entry.known });
+    competitors.push({ name: displayName, mentions: entry.mentions, mentionsWhenTargetAbsent: entry.absent, byEngine: entry.byEngine, reasons, isKnownCompetitor: entry.known });
   }
   competitors.sort((a, b) => b.mentions - a.mentions || a.name.localeCompare(b.name, 'ja'));
 
@@ -186,6 +207,8 @@ export function buildAggregate(input: {
   const domains = [...domMap.values()].sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
 
   const ok = extractions.filter((x) => x.status === 'ok').length;
+  const skipped = extractions.filter((x) => x.status !== 'ok' && x.notes?.startsWith('skipped:')).length;
+  const withClaude = extractions.filter((x) => x.method === 'regex+claude');
   return {
     slug,
     date,
@@ -205,11 +228,16 @@ export function buildAggregate(input: {
     totals: {
       answers: extractions.length,
       ok,
-      errors: extractions.length - ok,
+      errors: extractions.length - ok - skipped,
+      skipped,
       manual: extractions.filter((x) => x.source === 'manual').length,
       scan: extractions.filter((x) => x.source === 'scan').length,
+      extractedWithClaude: withClaude.length,
+      extractedRegexOnly: extractions.filter((x) => x.method === 'regex' && x.status === 'ok').length,
     },
+    ...(withClaude[0]?.model ? { extractModel: withClaude[0].model } : {}),
     ...(meta ? { meta } : {}),
+    extractions,
   };
 }
 

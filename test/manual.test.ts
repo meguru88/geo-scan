@@ -22,6 +22,16 @@ test('parseCsv: クォート・改行・BOM', () => {
   ]);
 });
 
+test('parseCsv: フィールド途中の " は文字として扱い、後続行を飲み込まない', () => {
+  const rows = parseCsv('a,b\n1,画面3"目\n2,x\n');
+  assert.deepEqual(rows, [
+    ['a', 'b'],
+    ['1', '画面3"目'],
+    ['2', 'x'],
+  ]);
+  assert.throws(() => parseCsv('a,b\n1,"unclosed\n'), /引用符/);
+});
+
 test('parseManualCsv: 列の検証と型変換', () => {
   const rows = parseManualCsv(
     'date,engine,question_no,mentioned,rank,cited_own,competitors,notes\n2026-09-02,Google-AIO,2,1,2,1,おたからや;買取大吉,memo\n2026-09-02,google_aio,3,0,,0,,\n',

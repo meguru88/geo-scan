@@ -6,10 +6,11 @@ const USAGE = `geo-scan — AI検索での「おすすめ」露出を計測す�
 使い方:
   npm run questions     -- <slug> [--force] [--mock]
   npm run scan          -- <slug> [--runs 3] [--engines openai,gemini,perplexity,anthropic]
-                                  [--max-cost 500] [--date YYYY-MM-DD] [--mock] [--seed x] [--yes]
-  npm run extract       -- <slug> [--date YYYY-MM-DD] [--force]
+                                  [--max-cost 500] [--date YYYY-MM-DD] [--yes] [--skip-extract]
+                                  [--concurrency 2] [--mock] [--seed x]
+  npm run extract       -- <slug> [--date YYYY-MM-DD] [--run N] [--force]
   npm run import-manual -- <slug> <csv>
-  npm run report        -- <slug> [--date YYYY-MM-DD] [--compare YYYY-MM-DD] [--no-pdf]
+  npm run report        -- <slug> [--date YYYY-MM-DD] [--run N] [--compare YYYY-MM-DD] [--no-pdf]
 `;
 
 /** コマンド名 → src/commands/ のファイル名 */

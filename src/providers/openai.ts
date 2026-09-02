@@ -1,5 +1,6 @@
 import { domainOf } from '../lib/config.js';
 import type { Citation } from '../lib/types.js';
+import type { SearchLocation } from './location.js';
 import { SYSTEM_PROMPT, type AskResult, type Provider } from './types.js';
 
 const ENDPOINT = 'https://api.openai.com/v1/responses';
@@ -30,10 +31,15 @@ interface OutputText {
   annotations?: ({ type: string } | UrlCitation)[];
 }
 
+interface RefusalPart {
+  type: 'refusal';
+  refusal?: string;
+}
+
 interface OutputMessage {
   type: 'message';
   role?: string;
-  content?: ({ type: string } | OutputText | { type: 'refusal'; refusal: string })[];
+  content?: ({ type: string } | OutputText | RefusalPart)[];
 }
 
 interface WebSearchCall {
@@ -75,8 +81,15 @@ export function cleanUrl(url: string): string {
   }
 }
 
-export function createOpenAIProvider(apiKey: string, model: string): Provider {
+export function createOpenAIProvider(apiKey: string, model: string, location: SearchLocation): Provider {
   const effort = process.env.OPENAI_REASONING_EFFORT?.trim() || 'low';
+  const userLocation = {
+    type: 'approximate',
+    country: location.country,
+    ...(location.city ? { city: location.city } : {}),
+    ...(location.region ? { region: location.region } : {}),
+    ...(location.timezone ? { timezone: location.timezone } : {}),
+  };
 
   return {
     engine: 'openai',
@@ -93,13 +106,7 @@ export function createOpenAIProvider(apiKey: string, model: string): Provider {
             model,
             instructions: SYSTEM_PROMPT,
             input: question,
-            tools: [
-              {
-                type: 'web_search',
-                search_context_size: 'medium',
-                user_location: { type: 'approximate', country: 'JP', city: 'Osaka', region: 'Osaka', timezone: 'Asia/Tokyo' },
-              },
-            ],
+            tools: [{ type: 'web_search', search_context_size: 'medium', user_location: userLocation }],
             include: ['web_search_call.action.sources'],
             ...(effort === 'none' ? {} : { reasoning: { effort } }),
             max_output_tokens: 6000,
@@ -112,8 +119,9 @@ export function createOpenAIProvider(apiKey: string, model: string): Provider {
       const bodyText = await res.text();
       if (!res.ok) throw new OpenAIHttpError(res.status, bodyText);
       const json = JSON.parse(bodyText) as ResponsesResponse;
-      if (json.status === 'failed' || json.error) {
-        throw new Error(`OpenAI response failed: ${json.error?.message ?? json.status}`);
+      if (json.error) throw new Error(`OpenAI response error: ${json.error.message ?? json.error.code ?? 'unknown'}`);
+      if (json.status !== 'completed') {
+        throw new Error(`OpenAI response ${json.status ?? 'unknown'}${json.incomplete_details?.reason ? ` (${json.incomplete_details.reason})` : ''}`);
       }
 
       const texts: string[] = [];
@@ -127,6 +135,7 @@ export function createOpenAIProvider(apiKey: string, model: string): Provider {
         }
         if (item.type !== 'message') continue;
         for (const part of (item as OutputMessage).content ?? []) {
+          if (part.type === 'refusal') throw new Error(`OpenAI refusal: ${(part as RefusalPart).refusal ?? ''}`.slice(0, 300));
           if (part.type !== 'output_text') continue;
           const ot = part as OutputText;
           texts.push(ot.text);
@@ -141,9 +150,11 @@ export function createOpenAIProvider(apiKey: string, model: string): Provider {
           }
         }
       }
+      const text = texts.join('');
+      if (!text.trim()) throw new Error('OpenAI returned an empty answer');
 
       return {
-        text: texts.join(''),
+        text,
         citations,
         usage: {
           inputTokens: json.usage?.input_tokens ?? 0,

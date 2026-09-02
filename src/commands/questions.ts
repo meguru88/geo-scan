@@ -58,19 +58,23 @@ async function generateWithClaude(target: TargetConfig): Promise<{ questions: Qu
   ].join('\n');
 
   const model = writerModel();
-  const res = await askJson<Generated>({ model, system, user, schema: SCHEMA, maxTokens: 4096, effort: 'medium' });
-  const list = (res.value.questions ?? []).filter((q) => q && typeof q.text === 'string' && q.text.trim());
-  if (list.length < QUESTION_COUNT) throw new Error(`Claude が返した質問が ${list.length} 個しかありません（${QUESTION_COUNT} 個必要）`);
-  const questions = list.slice(0, QUESTION_COUNT).map((q, i) => ({
-    no: i + 1,
-    text: q.text.trim(),
-    withArea: hasArea(q.text, target),
-  }));
-  const withArea = questions.filter((q) => q.withArea).length;
-  if (withArea !== QUESTION_COUNT / 2) {
-    console.warn(`注意: 地域名入りが ${withArea} 個です（目標 ${QUESTION_COUNT / 2}）。必要なら手で編集してください`);
+  let best: { questions: Question[]; model: string } | null = null;
+  // 地域名入り 5・なし 5 になるまで最大 3 回生成し、達しなければ一番近いものを採用して警告する
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const res = await askJson<Generated>({ model, system, user, schema: SCHEMA, maxTokens: 4096, effort: 'medium' });
+    const list = (res.value.questions ?? []).filter((q) => q && typeof q.text === 'string' && q.text.trim());
+    if (list.length < QUESTION_COUNT) throw new Error(`Claude が返した質問が ${list.length} 個しかありません（${QUESTION_COUNT} 個必要）`);
+    const questions = list.slice(0, QUESTION_COUNT).map((q, i) => ({ no: i + 1, text: q.text.trim(), withArea: hasArea(q.text, target) }));
+    const withArea = questions.filter((q) => q.withArea).length;
+    if (withArea === QUESTION_COUNT / 2) return { questions, model: res.model };
+    if (!best || Math.abs(withArea - QUESTION_COUNT / 2) < Math.abs(best.questions.filter((q) => q.withArea).length - QUESTION_COUNT / 2)) {
+      best = { questions, model: res.model };
+    }
+    console.warn(`地域名入りが ${withArea} 個でした（目標 ${QUESTION_COUNT / 2}）。再生成します（${attempt}/3）`);
   }
-  return { questions, model: res.model };
+  const withArea = best!.questions.filter((q) => q.withArea).length;
+  console.warn(`注意: 3 回生成しても 5/5 になりませんでした（地域名入り ${withArea} 個）。config/questions/${target.slug}.json を手で調整してください`);
+  return best!;
 }
 
 function generateMock(target: TargetConfig): Question[] {

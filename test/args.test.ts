@@ -12,6 +12,13 @@ test('parseArgs: 位置引数とフラグ', () => {
   assert.equal(flagNumber(a, 'max-cost', 500), 500);
 });
 
+test('parseArgs: 真偽フラグは後ろの位置引数を飲み込まない', () => {
+  const a = parseArgs(['--mock', 'meguru', '--no-pdf', 'extra']);
+  assert.deepEqual(a.positionals, ['meguru', 'extra']);
+  assert.equal(flagBool(a, 'mock'), true);
+  assert.equal(flagBool(a, 'no-pdf'), true);
+});
+
 test('flagNumber: 数値でなければエラー', () => {
   assert.throws(() => flagNumber(parseArgs(['--runs', 'abc']), 'runs', 1), /runs/);
 });

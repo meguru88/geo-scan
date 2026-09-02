@@ -4,6 +4,9 @@ export interface ParsedArgs {
   flags: Record<string, string | true>;
 }
 
+/** 値を取らないフラグ。後ろに位置引数が来ても飲み込まない */
+const BOOLEAN_FLAGS = new Set(['mock', 'force', 'yes', 'skip-extract', 'no-pdf', 'help']);
+
 export function parseArgs(argv: string[]): ParsedArgs {
   const positionals: string[] = [];
   const flags: Record<string, string | true> = {};
@@ -21,7 +24,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
       const name = a.slice(2);
       const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith('--')) {
+      if (!BOOLEAN_FLAGS.has(name) && next !== undefined && !next.startsWith('--')) {
         flags[name] = next;
         i++;
       } else {

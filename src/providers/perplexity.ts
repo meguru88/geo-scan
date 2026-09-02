@@ -1,5 +1,6 @@
 import { domainOf } from '../lib/config.js';
 import type { Citation } from '../lib/types.js';
+import type { SearchLocation } from './location.js';
 import { SYSTEM_PROMPT, type AskResult, type Provider } from './types.js';
 
 /**
@@ -37,7 +38,13 @@ export class PerplexityHttpError extends Error {
   }
 }
 
-export function createPerplexityProvider(apiKey: string, model: string): Provider {
+export function createPerplexityProvider(apiKey: string, model: string, location: SearchLocation): Provider {
+  const userLocation = {
+    country: location.country,
+    ...(location.region ? { region: location.region } : {}),
+    ...(location.city ? { city: location.city } : {}),
+  };
+
   return {
     engine: 'perplexity',
     model,
@@ -55,10 +62,7 @@ export function createPerplexityProvider(apiKey: string, model: string): Provide
               { role: 'system', content: SYSTEM_PROMPT },
               { role: 'user', content: question },
             ],
-            web_search_options: {
-              search_context_size: 'medium',
-              user_location: { country: 'JP', region: 'Osaka', city: 'Osaka' },
-            },
+            web_search_options: { search_context_size: 'medium', user_location: userLocation },
             max_tokens: 2048,
           }),
           signal: controller.signal,
@@ -72,6 +76,7 @@ export function createPerplexityProvider(apiKey: string, model: string): Provide
 
       const content = json.choices?.[0]?.message?.content;
       const text = typeof content === 'string' ? content : (content ?? []).map((p) => p.text ?? '').join('');
+      if (!text.trim()) throw new Error('Perplexity returned an empty answer');
 
       const citations: Citation[] = [];
       const seen = new Set<string>();

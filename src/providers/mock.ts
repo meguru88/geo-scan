@@ -80,13 +80,16 @@ export function createMockProvider(engine: Engine, target: TargetConfig, ctx: Pr
   const pool = loadPool();
   const own = ownDomain(target);
   const failRate = Number(process.env.GEO_SCAN_MOCK_FAIL_RATE ?? '0') || 0;
-  let calls = 0;
+  /** (質問, 回数) ごとの試行回数。並列順に依存せず同じ seed で同じ結果になるようにする */
+  const attempts = new Map<string, number>();
 
   return {
     engine,
     model: `mock-${engine}`,
     async ask(question: string, meta: AskMeta): Promise<AskResult> {
-      const attempt = ++calls;
+      const taskKey = `${meta.questionNo}|${meta.runIndex}`;
+      const attempt = (attempts.get(taskKey) ?? 0) + 1;
+      attempts.set(taskKey, attempt);
       const rng = mulberry32(hash32(`${ctx.seed}|${ctx.date}|${engine}|${meta.questionNo}|${meta.runIndex}`));
       await sleep(30 + Math.floor(rng() * 120));
 

@@ -12,7 +12,7 @@ geo-scan の 4 エンジンをどう呼ぶか、引用がどう返るか、い�
 | 呼び方 | fetch（openai@7 は Node 22 必須のため SDK 不使用） | `@google/genai` 2.x（3.0 は Node 22 必須） | fetch（公式 SDK は ESM-only、fetch と同じ body） | `@anthropic-ai/sdk` 0.123 |
 | 既定モデル | `gpt-5.4-mini`（無料ユーザー向けの mini 世代） | `gemini-3.5-flash`（Gemini アプリの既定） | `sonar` | `claude-sonnet-5`（claude.ai Free/Pro の既定） |
 | 検索の有効化 | `tools:[{type:"web_search"}]` | `config.tools:[{googleSearch:{}}]` | 常時（sonar 系は検索込み） | `tools:[{type:"web_search_20260209",name:"web_search"}]` |
-| 日本ロケール | `tools[].user_location:{type:"approximate",country:"JP",city:"Osaka",region:"Osaka",timezone:"Asia/Tokyo"}` | `config.toolConfig.retrievalConfig:{languageCode:"ja-JP",latLng:{latitude:34.69,longitude:135.50}}` | `web_search_options.user_location:{country:"JP",region:"Osaka",city:"Osaka"}` | `tools[].user_location:{type:"approximate",country:"JP",city:"Osaka",region:"Osaka",timezone:"Asia/Tokyo"}` |
+| 日本ロケール | `tools[].user_location:{type:"approximate",country:"JP",timezone:"Asia/Tokyo"}`（city/region は任意） | `config.toolConfig.retrievalConfig:{languageCode:"ja-JP"}`（`latLng` は任意） | `web_search_options.user_location:{country:"JP"}`（region/city は任意） | `tools[].user_location:{type:"approximate",country:"JP",timezone:"Asia/Tokyo"}`（city/region は任意） |
 | システム指示 | `instructions` | `config.systemInstruction` | `messages[0]{role:"system"}` | `system` |
 | 回答本文 | `output[].type=="message"` → `content[].type=="output_text"` → `.text` | `candidates[0].content.parts[].text`（`thought:true` は除く） | `choices[0].message.content` | `content[].type=="text"` → `.text`（複数ブロックを連結） |
 | 引用 URL | 同 `content[].annotations[]` の `type:"url_citation"` `{url,title,start_index,end_index}` | `candidates[0].groundingMetadata.groundingChunks[].web` `{uri,title}` ※uri はリダイレクト URL、title がホスト名 | `search_results[]` `{title,url,date,snippet}`（旧 `citations[]` は URL 文字列） | `content[].citations[]` の `type:"web_search_result_location"` `{url,title,cited_text}` |
@@ -69,6 +69,7 @@ geo-scan の 4 エンジンをどう呼ぶか、引用がどう返るか、い�
 
 ## 共通の注意
 
+- 利用者の位置ヒントは既定で国（JP）とタイムゾーンだけを渡す。市区町村・緯度経度まで渡すと「地域名なしの質問」でも地域に寄った回答になり、計測の意味が変わるため、渡したい場合は `config/targets/<slug>.json` の `searchLocation` で明示する（レポートの計測方法欄に載る）。
 - 回答本文は raw JSON に保存するだけで再配布しない。レポートは要約と短い抜粋のみ。
 - 各社ともモデルは数か月で入れ替わる。`OPENAI_MODEL` / `GEMINI_MODEL` / `PERPLEXITY_MODEL` / `ANTHROPIC_MODEL` で差し替えられ、料金表にないモデルは既定モデルの単価で概算する（警告を出す）。
 - 料金は `src/lib/pricing.ts` に集約。請求と合わなければそこを直す。

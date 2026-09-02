@@ -93,10 +93,15 @@ export function estimateCallUsd(engine: Engine, model: string): number {
   return costUsd(engine, model, ASSUMED_USAGE[engine]);
 }
 
+/** 抽出（Haiku）の実費。料金表にないモデルは Haiku 換算 */
+export function extractCostUsd(model: string, inputTokens: number, outputTokens: number): number {
+  const p = PRICING[model] ?? PRICING['claude-haiku-4-5']!;
+  return (inputTokens * p.inputPerMTok + outputTokens * p.outputPerMTok) / 1_000_000;
+}
+
 /** 抽出（Haiku）1回あたりの概算: 入力 ~2,000 / 出力 ~400 トークン */
 export function estimateExtractUsd(model: string): number {
-  const p = PRICING[model] ?? PRICING['claude-haiku-4-5']!;
-  return (2000 * p.inputPerMTok + 400 * p.outputPerMTok) / 1_000_000;
+  return extractCostUsd(model, 2000, 400);
 }
 
 export function toJpy(usd: number): number {

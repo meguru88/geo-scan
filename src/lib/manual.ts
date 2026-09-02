@@ -1,12 +1,13 @@
 import type { BusinessMention, Extraction, TargetConfig } from './types.js';
 
-/** 依存なしの CSV パーサ（ダブルクォート・改行・BOM 対応） */
+/** 依存なしの CSV パーサ（ダブルクォート・改行・BOM 対応）。フィールド途中の " は文字として扱う */
 export function parseCsv(text: string): string[][] {
   const src = text.replace(/^﻿/, '');
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
   let quoted = false;
+  let fieldStart = true;
   for (let i = 0; i < src.length; i++) {
     const ch = src[i]!;
     if (quoted) {
@@ -22,9 +23,13 @@ export function parseCsv(text: string): string[][] {
       }
       continue;
     }
-    if (ch === '"') {
+    if (ch === '"' && fieldStart) {
       quoted = true;
-    } else if (ch === ',') {
+      fieldStart = false;
+      continue;
+    }
+    fieldStart = ch === ',' || ch === '\n' || ch === '\r';
+    if (ch === ',') {
       row.push(field);
       field = '';
     } else if (ch === '\n' || ch === '\r') {
@@ -37,6 +42,7 @@ export function parseCsv(text: string): string[][] {
       field += ch;
     }
   }
+  if (quoted) throw new Error('CSV の引用符（"）が閉じていません');
   if (field.length || row.length) {
     row.push(field);
     rows.push(row);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { namesMatch, normalize, normalizeWithMap, regexExtract } from '../src/lib/extract.js';
+import { indexOfName, namesMatch, normalize, normalizeWithMap, regexExtract } from '../src/lib/extract.js';
 import type { TargetConfig } from '../src/lib/types.js';
 
 const target: TargetConfig = {
@@ -27,11 +27,25 @@ test('normalizeWithMap: NFKC で長さが変わる文字があっても元の位
   assert.equal(text[map[i]!], '東');
 });
 
-test('namesMatch: 部分一致は3文字以上、短い断片では結合しない', () => {
+test('namesMatch: 抽出名が設定名を含む場合だけ一致。断片や逆方向の包含は不一致', () => {
   assert.equal(namesMatch('買取大吉 難波店', '買取大吉'), true);
   assert.equal(namesMatch('ＫＯＭＥＨＹＯ', 'KOMEHYO'), true);
   assert.equal(namesMatch('大吉', '買取大吉'), false);
+  assert.equal(namesMatch('おたから', 'おたからや'), false);
+  assert.equal(namesMatch('株式会社', '株式会社RoyGBiv'), false);
   assert.equal(namesMatch('なんぼや', 'おたからや'), false);
+});
+
+test('indexOfName: 英数字の別名は単語境界で判定する', () => {
+  const norm = normalize('Home Guru という海外サイトによると、MEGURU が人気です。');
+  assert.equal(indexOfName(norm, 'MEGURU') > normalize('Home Guru という海外サイトによると、').length - 1, true);
+  assert.equal(indexOfName(normalize('homeguru only'), 'MEGURU'), -1);
+  assert.equal(indexOfName(normalize('https://meguru-kaitori.jp/price'), 'meguru-kaitori.jp') >= 0, true);
+});
+
+test('regexExtract: 英数字別名が他の単語の一部なら言及なし', () => {
+  const r = regexExtract({ text: 'Home Guru という海外サイトによると、おたからやが人気です。', citations: [] }, target);
+  assert.equal(r.mentioned, false);
 });
 
 test('regexExtract: 別名で言及を検出し、出現順に順位を付ける', () => {

@@ -33,10 +33,21 @@ export function loadTarget(slug: string): TargetConfig {
   if (t.slug !== slug) throw new Error(`${path.relative(ROOT, file)}: slug (${t.slug}) がファイル名と一致しません`);
   if (!Array.isArray(t.aliases) || t.aliases.length === 0) throw new Error('aliases は1件以上必要です');
   if (!t.aliases.includes(t.name)) t.aliases = [t.name, ...t.aliases];
+  t.aliases = t.aliases.map((a) => String(a).trim()).filter(Boolean);
+  const short = t.aliases.find((a) => a.normalize('NFKC').replace(/\s+/g, '').length < 2);
+  if (short !== undefined) throw new Error(`aliases に短すぎる別名があります（2 文字以上にしてください）: "${short}"`);
+  if (!Array.isArray(t.competitors)) throw new Error('competitors は配列で指定してください');
+  t.competitors = t.competitors.map((c) => String(c).trim()).filter(Boolean);
   try {
     new URL(t.url);
   } catch {
     throw new Error(`url が不正です: ${t.url}`);
+  }
+  if (t.searchLocation) {
+    const c = t.searchLocation.country;
+    if (c !== undefined && !/^[A-Z]{2}$/.test(c)) throw new Error(`searchLocation.country は ISO 3166-1 の 2 文字（例: JP）で指定してください: ${c}`);
+    const { latitude, longitude } = t.searchLocation;
+    if ((latitude === undefined) !== (longitude === undefined)) throw new Error('searchLocation の latitude と longitude は両方指定してください');
   }
   return t;
 }

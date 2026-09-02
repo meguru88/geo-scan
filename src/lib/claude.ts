@@ -33,36 +33,47 @@ export interface JsonAskResult<T> {
   usage: { inputTokens: number; outputTokens: number };
 }
 
-/** モデルごとに output_config.format が使えるかを記憶（未対応なら1回だけ失敗してフォールバック） */
+/** モデルごとに使えなかった機能を記憶（未対応なら1回だけ失敗してフォールバック） */
 const formatUnsupported = new Set<string>();
+const effortUnsupported = new Set<string>();
 
-/** Claude に JSON で答えさせて parse する */
-export async function askJson<T>(opts: JsonAsk): Promise<JsonAskResult<T>> {
-  const c = anthropicClient();
-  const base: Anthropic.MessageCreateParamsNonStreaming = {
+function buildParams(opts: JsonAsk): Anthropic.MessageCreateParamsNonStreaming {
+  const outputConfig: Anthropic.OutputConfig = {};
+  if (opts.effort && !effortUnsupported.has(opts.model)) outputConfig.effort = opts.effort;
+  if (!formatUnsupported.has(opts.model)) outputConfig.format = { type: 'json_schema', schema: opts.schema };
+  return {
     model: opts.model,
     max_tokens: opts.maxTokens ?? 4096,
     system: opts.system,
     messages: [{ role: 'user', content: opts.user }],
+    ...(Object.keys(outputConfig).length ? { output_config: outputConfig } : {}),
   };
-  const outputConfig: Anthropic.OutputConfig = {};
-  if (opts.effort) outputConfig.effort = opts.effort;
+}
 
-  let res: Anthropic.Message;
-  if (!formatUnsupported.has(opts.model)) {
+/** Claude に JSON で答えさせて parse する */
+export async function askJson<T>(opts: JsonAsk): Promise<JsonAskResult<T>> {
+  const c = anthropicClient();
+  let res: Anthropic.Message | null = null;
+  // 400 の原因（structured outputs 非対応 / effort 非対応）を見て、その機能だけ外して再試行する
+  for (let attempt = 0; attempt < 3 && !res; attempt++) {
     try {
-      res = await c.messages.create({
-        ...base,
-        output_config: { ...outputConfig, format: { type: 'json_schema', schema: opts.schema } },
-      });
+      res = await c.messages.create(buildParams(opts));
     } catch (err) {
       if (!(err instanceof Anthropic.BadRequestError)) throw err;
-      formatUnsupported.add(opts.model);
-      res = await c.messages.create({ ...base, ...(opts.effort ? { output_config: outputConfig } : {}) });
+      const msg = err.message;
+      if (/output_config\.format|json_schema|structured/i.test(msg) && !formatUnsupported.has(opts.model)) {
+        formatUnsupported.add(opts.model);
+        console.warn(`注意: ${opts.model} は structured outputs 非対応のため、プロンプトのみで JSON を求めます（${msg.slice(0, 120)}）`);
+        continue;
+      }
+      if (/effort/i.test(msg) && !effortUnsupported.has(opts.model)) {
+        effortUnsupported.add(opts.model);
+        continue;
+      }
+      throw err;
     }
-  } else {
-    res = await c.messages.create({ ...base, ...(opts.effort ? { output_config: outputConfig } : {}) });
   }
+  if (!res) throw new Error('Claude API の呼び出しに失敗しました');
 
   if (res.stop_reason === 'refusal' || res.stop_details?.type === 'refusal') {
     throw new Error(`Claude が応答を拒否しました (${res.stop_details?.category ?? 'unknown'})`);
