@@ -1,10 +1,12 @@
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { flagBool, flagNumber, flagString, parseArgs } from '../lib/args.js';
+import { extractModel } from '../lib/claude.js';
 import { loadQuestions, loadTarget } from '../lib/config.js';
-import { apiKey, isMock, KEY_ENV, usdJpyRate } from '../lib/env.js';
+import { apiKey, hasAnthropicKey, isMock, KEY_ENV, usdJpyRate } from '../lib/env.js';
+import { extractRun, shouldUseClaude } from '../lib/extract.js';
 import { mapPool, withRetry } from '../lib/pool.js';
-import { costUsd, estimateCallUsd, modelFor, pricingFor, toJpy, yen } from '../lib/pricing.js';
+import { costUsd, estimateCallUsd, estimateExtractUsd, modelFor, pricingFor, toJpy, yen } from '../lib/pricing.js';
 import { errorMessage, redact } from '../lib/redact.js';
 import { assertDate, ensureDir, newRunDir, rel, todayLocal, writeJson } from '../lib/runs.js';
 import { ENGINES, engineLabel, isEngine, type Engine, type Question, type RawAnswer } from '../lib/types.js';
@@ -32,7 +34,7 @@ export interface ScanMeta {
   models: Record<string, string>;
   questionCount: number;
   estimate: { usd: number; jpy: number; maxCostJpy: number; usdJpy: number };
-  actual?: { usd: number; jpy: number; ok: number; error: number };
+  actual?: { usd: number; jpy: number; ok: number; error: number; extractUsd?: number };
 }
 
 function parseEngines(value: string | undefined): Engine[] {
@@ -74,6 +76,7 @@ export async function run(argv: string[]): Promise<void> {
   const date = flagString(args, 'date') ? assertDate(flagString(args, 'date')!) : todayLocal();
   const seed = flagString(args, 'seed') ?? date;
   const mock = isMock();
+  const skipExtract = flagBool(args, 'skip-extract');
 
   const target = loadTarget(slug);
   const questions = loadQuestions(slug).questions;
@@ -83,6 +86,7 @@ export async function run(argv: string[]): Promise<void> {
     if (missing.length) {
       throw new Error(`APIキーがありません: ${missing.join(', ')}。.env に設定するか --engines で除外してください`);
     }
+    if (!hasAnthropicKey()) console.warn('注意: ANTHROPIC_API_KEY がないため抽出は regex のみになります（順位・理由の精度が落ちます）');
   }
 
   // --- 概算費用 ---
@@ -98,6 +102,13 @@ export async function run(argv: string[]): Promise<void> {
     const sub = per * callsPerEngine;
     estUsd += sub;
     console.log(`  ${engineLabel(e).padEnd(12)} ${model.padEnd(22)} ${String(callsPerEngine).padStart(4)}   ${yen(per).padStart(8)}   ${yen(sub).padStart(9)}`);
+  }
+  const useClaude = shouldUseClaude();
+  if (useClaude) {
+    const exModel = extractModel();
+    const exUsd = estimateExtractUsd(exModel) * callsPerEngine * engines.length;
+    estUsd += exUsd;
+    console.log(`  ${'抽出'.padEnd(12)} ${exModel.padEnd(22)} ${String(callsPerEngine * engines.length).padStart(4)}   ${yen(estimateExtractUsd(exModel)).padStart(8)}   ${yen(exUsd).padStart(9)}`);
   }
   console.log(`  合計見込み: ${yen(estUsd)}（上限 --max-cost ¥${maxCostJpy}）`);
   console.log(`  ※ 検索結果がコンテキストに入るため実際のトークン数は前後します。実費は raw/*.json と meta.json に記録します。`);
@@ -267,5 +278,15 @@ export async function run(argv: string[]): Promise<void> {
     if (p.note) console.log(`   ${engineLabel(e)}: ${models[e]}（${p.note}）`);
   }
 
+  if (skipExtract) {
+    console.log(`\n抽出は省略しました。後で \`npm run extract -- ${slug} --date ${date}\` を実行してください`);
+    return;
+  }
+
+  console.log(`\n■ 抽出（${useClaude ? `regex + Claude ${extractModel()}` : 'regex のみ'}）`);
+  const ex = await extractRun(runDir, { target, useClaude, log: (l) => console.log(l) });
+  meta.actual.extractUsd = ex.costUsd;
+  writeJson(path.join(runDir, 'meta.json'), meta);
+  console.log(`■ 抽出完了: ${ex.extracted} 件 / Claude ${ex.claudeCalls} 回 / 費用 ${yen(ex.costUsd)}`);
   console.log(`\n次: npm run report -- ${slug}${date === todayLocal() ? '' : ` --date ${date}`}`);
 }
