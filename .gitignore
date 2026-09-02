@@ -146,3 +146,4 @@ vite.config.ts.timestamp-*
 .env
 runs/
 dist/
+.geo-scan-version.json

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { flagBool, flagNumber, flagString, parseArgs } from '../src/lib/args.js';
 import { redact } from '../src/lib/redact.js';
+import { parseEngines } from '../src/lib/types.js';
 
 test('parseArgs: 位置引数とフラグ', () => {
   const a = parseArgs(['meguru', '--runs', '3', '--mock', '--compare=2026-09-01', 'extra']);
@@ -17,6 +18,23 @@ test('parseArgs: 真偽フラグは後ろの位置引数を飲み込まない', 
   assert.deepEqual(a.positionals, ['meguru', 'extra']);
   assert.equal(flagBool(a, 'mock'), true);
   assert.equal(flagBool(a, 'no-pdf'), true);
+});
+
+test('parseArgs: --check と --no-install も値を取らない', () => {
+  const a = parseArgs(['--check', '--no-install', '--branch', 'main']);
+  assert.equal(flagBool(a, 'check'), true);
+  assert.equal(flagBool(a, 'no-install'), true);
+  assert.equal(flagString(a, 'branch'), 'main');
+  assert.deepEqual(a.positionals, []);
+});
+
+test('parseEngines: scan と add で同じ解釈にする', () => {
+  assert.deepEqual(parseEngines(undefined), ['openai', 'gemini', 'perplexity', 'anthropic']);
+  assert.deepEqual(parseEngines('openai,gemini'), ['openai', 'gemini']);
+  assert.deepEqual(parseEngines(' anthropic , openai '), ['anthropic', 'openai']);
+  assert.deepEqual(parseEngines('openai,openai'), ['openai']);
+  assert.throws(() => parseEngines('chatgpt'), /不明なエンジン/);
+  assert.throws(() => parseEngines(''), /--engines が空です/);
 });
 
 test('flagNumber: 数値でなければエラー', () => {

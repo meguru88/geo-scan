@@ -13,6 +13,7 @@ const USAGE = `geo-scan — AI検索での「おすすめ」露出を計測す�
   npm run extract       -- <slug> [--date YYYY-MM-DD] [--run N] [--force]
   npm run import-manual -- <slug> <csv>
   npm run report        -- <slug> [--date YYYY-MM-DD] [--run N] [--compare YYYY-MM-DD] [--no-pdf]
+  npm run update        [-- --check] [--yes] [--branch main] [--zip <ダウンロード済みのzip>]
 `;
 
 /** コマンド名 → src/commands/ のファイル名 */
@@ -23,6 +24,7 @@ const COMMANDS: Record<string, string> = {
   extract: 'extract',
   'import-manual': 'importManual',
   report: 'report',
+  update: 'update',
 };
 
 interface CommandModule {

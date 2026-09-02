@@ -5,7 +5,7 @@ export interface ParsedArgs {
 }
 
 /** 値を取らないフラグ。後ろに位置引数が来ても飲み込まない */
-const BOOLEAN_FLAGS = new Set(['mock', 'force', 'yes', 'skip-extract', 'no-pdf', 'help']);
+const BOOLEAN_FLAGS = new Set(['mock', 'force', 'yes', 'skip-extract', 'no-pdf', 'help', 'check', 'no-install']);
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const positionals: string[] = [];
