@@ -1,8 +1,7 @@
-import type { Aggregate } from './aggregate.js';
+import { stableQuestionCount, type Aggregate } from './aggregate.js';
 import { askJson, writerModel } from './claude.js';
 import { hasAnthropicKey, isMock } from './env.js';
 import { errorMessage } from './redact.js';
-import { scoreLabel } from './score.js';
 import type { TargetConfig } from './types.js';
 
 export interface Suggestion {
@@ -90,6 +89,18 @@ function pct(v: number): string {
   return `${Math.round(v * 100)}%`;
 }
 
+/**
+ * 質問数の言い回し。レポートの表紙の見出しと同じ「安定して出た質問」（計測したすべての AI で
+ * 毎回そろって社名が挙がった質問）で数える。1枚のレポートの中で数え方が2つにならないようにするため。
+ */
+function stableText(agg: Aggregate): string {
+  const total = agg.questionRows.length;
+  const stable = stableQuestionCount(agg.questionRows, agg.engines);
+  if (stable === 0) return 'どの質問でも安定して出ていません';
+  if (stable === total) return `${total} 問すべてで安定して出ています`;
+  return `${total} 問中 ${stable} 問でしか安定して出ていません`;
+}
+
 /** Claude を使わない（モック／キーなし／失敗時）場合の、計測結果に応じたテンプレート提案 */
 export function templateAdvice(agg: Aggregate): Advice {
   const o = agg.overall;
@@ -101,9 +112,9 @@ export function templateAdvice(agg: Aggregate): Advice {
   const chosen = [...new Set(keys)].slice(0, 3).map((k) => candidates.find((c) => c.key === k)!);
 
   const areaRows = agg.questionRows.filter((q) => agg.questions.find((x) => x.no === q.no)?.withArea);
-  const areaMissing = areaRows.filter((q) => !q.mentionedAnywhere).length;
+  const areaUnstable = areaRows.length - stableQuestionCount(areaRows, agg.engines);
   const evidence: Record<string, string> = {
-    area: areaRows.length ? `地域名入りの質問 ${areaRows.length} 問のうち ${areaMissing} 問でどのエンジンにも出ていません。` : '',
+    area: areaRows.length ? `地域名入りの質問 ${areaRows.length} 問のうち ${areaUnstable} 問で安定して出ていません。` : '',
     faq: `今回の自社サイト引用率は ${pct(o.citeRate)}（${o.answers} 回答中 ${o.cited} 回）でした。`,
     third: `今回の言及率は ${pct(o.mentionRate)}（${o.answers} 回答中 ${o.mentioned} 回）でした。`,
     gbp: agg.byEngine.find((e) => e.engine === 'gemini') ? `Gemini でのスコアは ${agg.byEngine.find((e) => e.engine === 'gemini')!.total} 点でした。` : '',
@@ -114,9 +125,15 @@ export function templateAdvice(agg: Aggregate): Advice {
     action: c.action,
   }));
 
-  const mentionedQ = agg.questionRows.filter((q) => q.mentionedAnywhere).length;
+  // 質問数は表紙の見出しが伝えるので、サマリーは「誰が出ているか」を担う（見出しと同じ文を繰り返さない）。
+  // 競合が1社も無いときだけ、見出しと同じ数え方で状況を言い直す。
   const top = agg.competitors.slice(0, 3).map((c) => c.name).join('・');
-  const summary = `${scoreLabel(o.total)}。${agg.questionRows.length} 問中 ${mentionedQ} 問で${agg.target.name}が登場${top ? `、代わりに${top}などが多く挙がっています` : ''}。`;
+  const allStable = stableQuestionCount(agg.questionRows, agg.engines) === agg.questionRows.length;
+  const summary = top
+    ? allStable
+      ? `他には${top}なども挙がっています。`
+      : `代わりに${top}などが多く挙がっています。`
+    : `${stableText(agg)}。`;
   return { summary, suggestions, source: 'template' };
 }
 
@@ -143,6 +160,7 @@ function compactData(agg: Aggregate): string {
   const lines = [
     `対象: ${agg.target.name}（${agg.target.industry} / ${agg.target.area} / ${agg.target.url}）`,
     `総合スコア ${o.total}/100（言及率 ${pct(o.mentionRate)}、言及時の平均順位 ${o.avgRank?.toFixed(1) ?? '-'}、自社サイト引用率 ${pct(o.citeRate)}、有効回答 ${o.answers}）`,
+    `安定して出た質問（計測したすべての AI で毎回そろって社名が挙がった質問）: ${agg.questionRows.length} 問中 ${stableQuestionCount(agg.questionRows, agg.engines)} 問`,
     'エンジン別:',
     ...agg.byEngine.map((e) => `- ${e.label}: ${e.total}/100（言及 ${pct(e.mentionRate)}、引用 ${pct(e.citeRate)}）`),
     '質問別（○=全回言及 △=一部 ×=なし －=データなし）:',
@@ -170,6 +188,8 @@ export async function claudeAdvice(agg: Aggregate): Promise<Advice> {
     '出力:',
     '1. summary: 経営者向けの一言サマリー（50 文字以内、結果と方向性が分かる）',
     '2. suggestions: 改善提案をちょうど 3 件。候補から選ぶか、データから必要なら独自に作る。各 title は 25 文字以内、why はこの計測結果のどの数字・傾向が根拠かを 80 文字以内で、action は来月までに着手できる具体的な作業を 100 文字以内で。',
+    '',
+    `注意: 「10問中 N 問」のように質問数に触れるときは、必ず上の「安定して出た質問」の数（${agg.questionRows.length} 問中 ${stableQuestionCount(agg.questionRows, agg.engines)} 問）を使ってください。レポートの表紙も同じ数え方で書かれているため、別の数え方を混ぜると読者が混乱します。`,
     '',
     '形式: {"summary":"...","suggestions":[{"title":"...","why":"...","action":"..."},{...},{...}]}',
   ].join('\n');

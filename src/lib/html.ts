@@ -1,4 +1,4 @@
-import type { Aggregate, EngineScore } from './aggregate.js';
+import { stableQuestionCount, type Aggregate, type EngineScore } from './aggregate.js';
 import type { Comparison } from './compare.js';
 import type { Mark } from './score.js';
 import type { Advice } from './suggest.js';
@@ -337,6 +337,8 @@ export function renderReport(agg: Aggregate, advice: Advice, comparison: Compari
   const runs = Math.max(0, ...autoEngines.map((e) => agg.runsPerEngine[e.engine] ?? 0));
   const qCount = agg.questions.length;
   const appeared = agg.questionRows.filter((q) => q.mentionedAnywhere).length;
+  // 見出しは「計測したすべての AI で毎回そろって社名が出た」質問だけを数える（△は含めない）
+  const stable = stableQuestionCount(agg.questionRows, agg.engines);
   const top3 = agg.competitors.slice(0, 3);
   const top5 = agg.competitors.slice(0, 5);
   const top10 = agg.domains.slice(0, 10);
@@ -347,11 +349,11 @@ export function renderReport(agg: Aggregate, advice: Advice, comparison: Compari
   const manualOk = agg.extractions.filter((x) => x.source === 'manual' && x.status === 'ok').length;
 
   const headline =
-    appeared === 0
+    stable === 0
       ? `${qCount}問中 <span class="hl">0問</span>で<br>あなたの会社は出てきませんでした`
-      : appeared === qCount
-        ? `${qCount}問<span class="hl">すべて</span>で<br>あなたの会社が出てきました`
-        : `${qCount}問中 <span class="hl">${appeared}問</span>でしか<br>あなたの会社は出てきませんでした`;
+      : stable === qCount
+        ? `${qCount}問<span class="hl">すべて</span>で<br>安定して出ています`
+        : `${qCount}問中 <span class="hl">${stable}問</span>でしか<br>安定して出ていません`;
 
   const measuredText = [
     autoEngines.length ? `${autoEngines.length} エンジン × ${qCount} 問${runs > 1 ? ` × ${runs} 回` : ''} = ${agg.totals.scan} 件（有効 ${scanOk} 件）` : '',
@@ -370,7 +372,7 @@ export function renderReport(agg: Aggregate, advice: Advice, comparison: Compari
     <span>計測日 ${h(agg.date)}</span>
   </div>
   <p class="headline">${headline}</p>
-  <p class="sub-headline">${h(advice.summary)}<span class="headline-note">${qCount} 問のうち、${autoEngines.length ? `${autoEngines.length}つの AI` : 'AI'}のどれか 1 つでも社名を挙げた質問の数です。</span></p>
+  <p class="sub-headline">${h(advice.summary)}<span class="headline-note">計測したすべての AI で毎回そろって社名が挙がった質問の数です（一部の回だけ出た質問は含みません）。</span></p>
   <div class="score-block">
     ${donut(o.total)}
     <div class="donut-cap"><strong>総合スコア</strong>100点満点</div>

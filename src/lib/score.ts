@@ -70,10 +70,3 @@ export function markOf(extractions: readonly Extraction[]): { mark: Mark; okRuns
   if (mentionedRuns === 0) return { mark: '×', okRuns: ok.length, mentionedRuns };
   return { mark: '△', okRuns: ok.length, mentionedRuns };
 }
-
-export function scoreLabel(total: number): string {
-  if (total >= 70) return 'AI検索で安定して推薦されています';
-  if (total >= 40) return 'AI検索で一部の質問には出ています';
-  if (total >= 15) return 'AI検索での露出は限定的です';
-  return 'AI検索ではほぼ推薦されていません';
-}
