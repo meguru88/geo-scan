@@ -1,0 +1,14 @@
+date,engine,question_no,mentioned,rank,cited_own,competitors,notes
+2026-09-02,google_aio,1,0,,0,おたからや;買取大吉;なんぼや,AI Overviews 表示あり
+2026-09-02,google_aio,2,1,2,1,おたからや;ゴールドミセス,
+2026-09-02,google_aio,3,0,,0,なんぼや;KOMEHYO,
+2026-09-02,google_aio,4,0,,0,なんぼや;KOMEHYO;エコリング,
+2026-09-02,google_aio,5,0,,0,福ちゃん;よろずや,
+2026-09-02,google_aio,6,0,,0,,AI Overviews 非表示
+2026-09-02,google_aio,7,0,,0,よろずや;エコリング,
+2026-09-02,google_aio,8,0,,0,福ちゃん,
+2026-09-02,google_aio,9,1,3,0,おたからや;買取大吉;ゴールドミセス,
+2026-09-02,google_aio,10,0,,0,福ちゃん;よろずや,
+2026-09-02,google_aimode,1,1,4,1,おたからや;買取大吉;なんぼや;福ちゃん,
+2026-09-02,google_aimode,2,1,1,1,ゴールドミセス;買取大吉,
+2026-09-02,google_aimode,9,1,2,1,おたからや;ゴールドミセス,
