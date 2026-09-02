@@ -12,7 +12,7 @@ export function questionsPath(slug: string): string {
   return path.join(ROOT, 'config', 'questions', `${slug}.json`);
 }
 
-function assertSlug(slug: string): void {
+export function assertSlug(slug: string): void {
   if (!/^[a-z0-9][a-z0-9_-]*$/i.test(slug)) {
     throw new Error(`slug が不正です: ${slug}（英数字・-・_ のみ）`);
   }
@@ -50,6 +50,14 @@ export function loadTarget(slug: string): TargetConfig {
     if ((latitude === undefined) !== (longitude === undefined)) throw new Error('searchLocation の latitude と longitude は両方指定してください');
   }
   return t;
+}
+
+export function saveTarget(target: TargetConfig): string {
+  assertSlug(target.slug);
+  const file = targetPath(target.slug);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(target, null, 2) + '\n');
+  return file;
 }
 
 export function loadQuestions(slug: string): QuestionSet {

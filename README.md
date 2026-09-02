@@ -31,6 +31,26 @@ cp .env.example .env   # API キーを記入
 
 ## 対象の設定
 
+### 1コマンドで追加する（おすすめ）
+
+```bash
+npm run add -- --slug royg --url https://roygbiv.stars.ne.jp/ --name "ヘルパーステーションRoyG"
+```
+
+サイトを読んで設定と質問を作り、そのまま計測まで進めます。
+
+1. URL を取得して title・meta description・本文を抽出（Shift_JIS などの日本語サイトにも対応）
+2. Claude（`claude-opus-5`）が社名の表記ゆれ・業種・地域を推定
+3. その業種と地域の主要な競合 10 社を Web 検索で調査
+4. `config/targets/<slug>.json` と `config/questions/<slug>.json` を書き出し
+5. 内容と概算費用を表示して「このまま計測しますか？」と確認 → `y` で `scan` → `report` まで実行
+
+`--name` を省くとサイトから推定します。`--industry` `--area` でも上書きできます。`--yes` を付けると確認なしで最後まで走ります。既存の slug があるときは上書きせず止まります（`--force` で上書き）。`ANTHROPIC_API_KEY` が必要です。
+
+概算費用が `--max-cost`（既定 500 円）を超える場合は設定ファイルだけ作り、実行するコマンドを案内して止まります。最初から通したいときは `--max-cost 1000` のように指定してください。
+
+### 手で書く
+
 `config/targets/<slug>.json` を作ります（`meguru` が入っています）。
 
 ```json
@@ -49,6 +69,15 @@ cp .env.example .env   # API キーを記入
 検索エンジンに渡す「利用者の位置」は既定で国（JP）だけです。市区町村まで渡したい場合は `"searchLocation": { "city": "Osaka", "region": "Osaka", "latitude": 34.6937, "longitude": 135.5023 }` を追加してください（地域名なしの質問まで地域に寄るので、計測の意図に合わせて選びます。レポートの計測方法欄に記載されます）。
 
 ## コマンド
+
+### 0. 対象を追加する
+
+```bash
+npm run add -- --slug royg --url https://roygbiv.stars.ne.jp/ --name "ヘルパーステーションRoyG"
+npm run add -- --slug royg --url https://roygbiv.stars.ne.jp/ --yes --max-cost 1000   # 確認なしで計測まで
+```
+
+オプション: `--name` `--industry` `--area`（推定の上書き）、`--force`（既存を上書き）、`--yes`（確認を省略）、`--runs` `--max-cost` `--engines`（続けて走る scan に渡す）。詳細は「対象の設定」を参照。
 
 ### 1. 質問を作る
 
@@ -131,9 +160,9 @@ config/targets/<slug>.json      対象企業
 config/questions/<slug>.json    質問（生成 or 手書き）
 runs/<slug>/<日付>/             raw/ extracted/ manual/ meta.json aggregate.json report.html report.pdf
 runs/<slug>/<日付>/run-2/       同日の 2 回目以降
-src/commands/                   questions / scan / extract / importManual / report
+src/commands/                   add / questions / scan / extract / importManual / report
 src/providers/                  openai / gemini / perplexity / anthropic / mock / location
-src/lib/                        抽出・スコア・集計・比較・HTML・PDF・費用など
+src/lib/                        サイト取得・素性推定・抽出・スコア・集計・比較・HTML・PDF・費用など
 docs/api-notes.md               各社 API の仕様と料金メモ
 ```
 

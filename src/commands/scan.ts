@@ -1,12 +1,12 @@
 import path from 'node:path';
-import readline from 'node:readline/promises';
 import { flagBool, flagNumber, flagString, parseArgs } from '../lib/args.js';
 import { extractModel } from '../lib/claude.js';
 import { loadQuestions, loadTarget } from '../lib/config.js';
 import { apiKey, hasAnthropicKey, isMock, KEY_ENV, usdJpyRate } from '../lib/env.js';
 import { extractRun, shouldUseClaude } from '../lib/extract.js';
 import { mapPool, withRetry } from '../lib/pool.js';
-import { costUsd, estimateCallUsd, estimateExtractUsd, modelFor, pricingFor, toJpy, yen } from '../lib/pricing.js';
+import { costUsd, estimateCallUsd, estimateScanCost, modelFor, pricingFor, toJpy, yen } from '../lib/pricing.js';
+import { confirm } from '../lib/prompt.js';
 import { errorMessage, redact, redactDeep } from '../lib/redact.js';
 import { assertDate, ensureDir, newRunDir, rel, todayLocal, writeJson } from '../lib/runs.js';
 import { ENGINES, engineLabel, isEngine, type Engine, type Question, type RawAnswer } from '../lib/types.js';
@@ -60,19 +60,6 @@ function id(engine: Engine, q: Question, r: number): string {
   return `${engine}-q${String(q.no).padStart(2, '0')}-r${r}`;
 }
 
-async function confirm(question: string): Promise<boolean> {
-  if (!process.stdin.isTTY) {
-    throw new Error('対話できない環境（cron / CI / パイプ）です。内容を確認済みなら --yes を付けて実行してください');
-  }
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const a = (await rl.question(question)).trim().toLowerCase();
-    return a === 'y' || a === 'yes';
-  } finally {
-    rl.close();
-  }
-}
-
 function errorRecord(base: Omit<RawAnswer, 'status' | 'error' | 'text' | 'citations' | 'usage' | 'costUsd' | 'costJpy'>, error: string): RawAnswer {
   return { ...base, status: 'error', error, text: '', citations: [], usage: { inputTokens: 0, outputTokens: 0, searches: 0 }, costUsd: 0, costJpy: 0 };
 }
@@ -106,27 +93,18 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   // --- 概算費用 ---
-  const models: Record<string, string> = {};
+  const useClaude = shouldUseClaude();
+  const estimate = estimateScanCost(engines, questions.length, runs, useClaude ? extractModel() : null);
+  const models = estimate.models;
   const perCallUsd: Record<string, number> = {};
-  const callsPerEngine = questions.length * runs;
-  let estUsd = 0;
+  for (const e of engines) perCallUsd[e] = estimateCallUsd(e, models[e]!);
+  const estUsd = estimate.totalUsd;
   console.log(`\n■ 計測の概算費用（1ドル=${usdJpyRate()}円）${mock ? '  ※モック実行ですが概算は本番の料金で計算します' : ''}`);
   console.log('  エンジン       モデル                  回数   1回あたり     小計');
-  for (const e of engines) {
-    const model = modelFor(e);
-    models[e] = model;
-    const per = estimateCallUsd(e, model);
-    perCallUsd[e] = per;
-    const sub = per * callsPerEngine;
-    estUsd += sub;
-    console.log(`  ${engineLabel(e).padEnd(12)} ${model.padEnd(22)} ${String(callsPerEngine).padStart(4)}   ${yen(per).padStart(8)}   ${yen(sub).padStart(9)}`);
-  }
-  const useClaude = shouldUseClaude();
-  if (useClaude) {
-    const exModel = extractModel();
-    const exUsd = estimateExtractUsd(exModel) * callsPerEngine * engines.length;
-    estUsd += exUsd;
-    console.log(`  ${'抽出'.padEnd(12)} ${exModel.padEnd(22)} ${String(callsPerEngine * engines.length).padStart(4)}   ${yen(estimateExtractUsd(exModel)).padStart(8)}   ${yen(exUsd).padStart(9)}`);
+  for (const row of estimate.rows) {
+    console.log(
+      `  ${row.label.padEnd(12)} ${row.model.padEnd(22)} ${String(row.calls).padStart(4)}   ${yen(row.perCallUsd).padStart(8)}   ${yen(row.subtotalUsd).padStart(9)}`,
+    );
   }
   console.log(`  合計見込み: ${yen(estUsd)}（上限 --max-cost ¥${maxCostJpy}）`);
   console.log(`  検索の地域設定: ${describeLocation(location)}${target.searchLocation ? '' : '（国のみ。市区町村は config の searchLocation で指定）'}`);
