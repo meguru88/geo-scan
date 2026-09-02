@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { QuestionCell, QuestionRow } from '../src/lib/aggregate.js';
-import { cleanReason, stableQuestionCount, toneOf } from '../src/lib/html.js';
+import { stableQuestionCount, type QuestionCell, type QuestionRow } from '../src/lib/aggregate.js';
+import { cleanReason, toneOf } from '../src/lib/html.js';
 import type { Mark } from '../src/lib/score.js';
 
 /** mark と有効回答数だけ指定してセルを作る */

@@ -89,6 +89,20 @@ export interface Aggregate {
   extractions: Extraction[];
 }
 
+/**
+ * 「安定して出た質問」の数。計測できた AI すべてで ○（有効な回答すべてで社名が出た）だった質問だけを数える。
+ * △（一部の回だけ出た）は含めない。有効な回答が無い AI（未入力・全回エラー）は判定から外す。
+ * レポートの見出しとサマリーはどちらもこの数え方に揃える。
+ */
+export function stableQuestionCount(rows: readonly QuestionRow[], engines: readonly string[]): number {
+  return rows.filter((row) => {
+    const evaluated = engines
+      .map((e) => row.cells[e])
+      .filter((c): c is QuestionCell => c !== undefined && c.okRuns > 0);
+    return evaluated.length > 0 && evaluated.every((c) => c.mark === '○');
+  }).length;
+}
+
 export function loadExtractions(slug: string, date: string, runDir: string): { extractions: Extraction[]; meta?: ScanMeta } {
   const scan = readJsonFiles<Extraction>(path.join(runDir, 'extracted')).map((e) => ({ ...e, source: 'scan' as const }));
   const manual = readJsonFiles<Extraction>(path.join(dateDir(slug, date), 'manual')).map((e) => ({ ...e, source: 'manual' as const }));
