@@ -11,6 +11,8 @@ export interface AskResult {
   model: string;
   /** プロバイダのレスポンス全体（保存用） */
   raw: unknown;
+  /** サーバーが返した実費（USD）。あれば料金表の計算より優先する */
+  costUsd?: number;
 }
 
 /** 呼び出し側のメタ情報。実プロバイダは無視してよい（モックが回答の揺らぎに使う） */

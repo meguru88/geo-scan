@@ -20,8 +20,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
     "@google/genai": "^2.20.0",
-    "openai": "^7.9.0",
-    "puppeteer": "^25.9.0"
+    "puppeteer": "^24.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",
