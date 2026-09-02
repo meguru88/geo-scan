@@ -9,9 +9,26 @@ import { errorMessage } from './redact.js';
 import { readJsonFiles, writeJson } from './runs.js';
 import type { BusinessMention, Extraction, RawAnswer, TargetConfig } from './types.js';
 
-/** 全角/半角・大文字小文字の揺れを吸収した比較用文字列 */
+/**
+ * 全角/半角・大文字小文字・空白の揺れを吸収した比較用文字列と、
+ * 正規化後の各文字が元テキストの何文字目に由来するかの対応表。
+ * （㈱ → (株) のように NFKC で長さが変わる文字があるので、文字ごとに正規化して対応を取る）
+ */
+export function normalizeWithMap(s: string): { norm: string; map: number[] } {
+  let norm = '';
+  const map: number[] = [];
+  for (let i = 0; i < s.length; i++) {
+    for (const ch of s[i]!.normalize('NFKC').toLowerCase()) {
+      if (/\s/.test(ch)) continue;
+      norm += ch;
+      map.push(i);
+    }
+  }
+  return { norm, map };
+}
+
 export function normalize(s: string): string {
-  return s.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+  return normalizeWithMap(s).norm;
 }
 
 function stripMarkdown(s: string): string {
@@ -65,20 +82,6 @@ function indexOfName(normText: string, name: string): number {
   return normText.indexOf(n);
 }
 
-/**
- * 正規化した文字列上の位置を元テキストの位置に近似変換する。
- * NFKC で長さが変わる文字は稀なので、空白を除いた位置合わせだけ行う。
- */
-function mapIndexToOriginal(text: string, normIndex: number): number {
-  let count = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (/\s/.test(text[i]!)) continue;
-    if (count === normIndex) return i;
-    count++;
-  }
-  return Math.max(0, text.length - 1);
-}
-
 export interface RegexResult {
   mentioned: boolean;
   citedOwnSite: boolean;
@@ -89,7 +92,8 @@ export interface RegexResult {
 
 /** 正規表現（文字列一致）だけで取れる分 */
 export function regexExtract(raw: Pick<RawAnswer, 'text' | 'citations'>, target: TargetConfig): RegexResult {
-  const normText = normalize(raw.text);
+  const { norm: normText, map } = normalizeWithMap(raw.text);
+  const toOriginal = (normIndex: number): number => map[normIndex] ?? Math.max(0, raw.text.length - 1);
   const own = ownDomain(target);
 
   const found: { name: string; isTarget: boolean; index: number }[] = [];
@@ -108,7 +112,7 @@ export function regexExtract(raw: Pick<RawAnswer, 'text' | 'citations'>, target:
   const businesses: BusinessMention[] = found.map((f) => ({
     name: f.name,
     isTarget: f.isTarget,
-    reason: reasonAt(raw.text, mapIndexToOriginal(raw.text, f.index), f.name).slice(0, 120),
+    reason: reasonAt(raw.text, toOriginal(f.index), f.name).slice(0, 120),
   }));
 
   const citedDomains = [...new Set(raw.citations.map((c) => c.domain))];
@@ -207,21 +211,26 @@ export interface ExtractSummary {
   costUsd: number;
 }
 
+/**
+ * 名前の照合。完全一致か、一方が他方を含む（例: "買取大吉 難波店" ⊃ "買取大吉"）。
+ * 「大吉」「買取」のような短い断片での誤結合を避けるため、短い側は 3 文字以上を要求する
+ */
+export function namesMatch(a: string, b: string): boolean {
+  const x = normalize(a);
+  const y = normalize(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  return short.length >= 3 && long.includes(short);
+}
+
 function canonicalCompetitor(name: string, target: TargetConfig): string | null {
-  const n = normalize(name);
-  for (const c of target.competitors) {
-    const cn = normalize(c);
-    if (n === cn || n.includes(cn) || cn.includes(n)) return c;
-  }
+  for (const c of target.competitors) if (namesMatch(name, c)) return c;
   return null;
 }
 
 function isTargetName(name: string, target: TargetConfig): boolean {
-  const n = normalize(name);
-  return target.aliases.some((a) => {
-    const an = normalize(a);
-    return an && (n === an || n.includes(an) || an.includes(n));
-  });
+  return target.aliases.some((a) => namesMatch(name, a));
 }
 
 /** 1回答分の抽出。regex を土台に Claude の結果で業者リスト・順位・理由を補う */

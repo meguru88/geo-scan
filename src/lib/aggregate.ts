@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ScanMeta } from '../commands/scan.js';
 import { ownDomain } from './config.js';
-import { normalize } from './extract.js';
+import { namesMatch, normalize } from './extract.js';
 import { dateDir, readJsonFiles } from './runs.js';
 import { markOf, scoreOf, type Mark, type Score } from './score.js';
 import { ENGINES, engineLabel, type Extraction, type Question, type TargetConfig } from './types.js';
@@ -77,11 +77,7 @@ export function loadExtractions(slug: string, date: string, runDir: string): { e
 }
 
 function canonicalName(name: string, target: TargetConfig): { name: string; known: boolean } {
-  const n = normalize(name);
-  for (const c of target.competitors) {
-    const cn = normalize(c);
-    if (n === cn || n.includes(cn) || cn.includes(n)) return { name: c, known: true };
-  }
+  for (const c of target.competitors) if (namesMatch(name, c)) return { name: c, known: true };
   return { name: name.trim(), known: false };
 }
 

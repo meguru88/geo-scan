@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { normalize, regexExtract } from '../src/lib/extract.js';
+import { namesMatch, normalize, normalizeWithMap, regexExtract } from '../src/lib/extract.js';
 import type { TargetConfig } from '../src/lib/types.js';
 
 const target: TargetConfig = {
@@ -17,6 +17,21 @@ const target: TargetConfig = {
 test('normalize: 全角英数・大文字・空白の揺れを吸収', () => {
   assert.equal(normalize('ＭＥＧＵＲＵ 買取'), 'meguru買取');
   assert.equal(normalize('Meguru'), 'meguru');
+});
+
+test('normalizeWithMap: NFKC で長さが変わる文字があっても元の位置に戻せる', () => {
+  const text = '㈱RoyGBiv は 東住吉区。';
+  const { norm, map } = normalizeWithMap(text);
+  assert.equal(norm, '(株)roygbivは東住吉区。');
+  const i = norm.indexOf('東住吉');
+  assert.equal(text[map[i]!], '東');
+});
+
+test('namesMatch: 部分一致は3文字以上、短い断片では結合しない', () => {
+  assert.equal(namesMatch('買取大吉 難波店', '買取大吉'), true);
+  assert.equal(namesMatch('ＫＯＭＥＨＹＯ', 'KOMEHYO'), true);
+  assert.equal(namesMatch('大吉', '買取大吉'), false);
+  assert.equal(namesMatch('なんぼや', 'おたからや'), false);
 });
 
 test('regexExtract: 別名で言及を検出し、出現順に順位を付ける', () => {
