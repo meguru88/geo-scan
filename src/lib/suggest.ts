@@ -2,7 +2,6 @@ import { stableQuestionCount, type Aggregate } from './aggregate.js';
 import { askJson, writerModel } from './claude.js';
 import { hasAnthropicKey, isMock } from './env.js';
 import { errorMessage } from './redact.js';
-import { scoreLabel } from './score.js';
 import type { TargetConfig } from './types.js';
 
 export interface Suggestion {
@@ -126,8 +125,15 @@ export function templateAdvice(agg: Aggregate): Advice {
     action: c.action,
   }));
 
+  // 質問数は表紙の見出しが伝えるので、サマリーは「誰が出ているか」を担う（見出しと同じ文を繰り返さない）。
+  // 競合が1社も無いときだけ、見出しと同じ数え方で状況を言い直す。
   const top = agg.competitors.slice(0, 3).map((c) => c.name).join('・');
-  const summary = `${scoreLabel(o.total)}。${stableText(agg)}${top ? `。代わりに${top}などが多く挙がっています` : ''}。`;
+  const allStable = stableQuestionCount(agg.questionRows, agg.engines) === agg.questionRows.length;
+  const summary = top
+    ? allStable
+      ? `他には${top}なども挙がっています。`
+      : `代わりに${top}などが多く挙がっています。`
+    : `${stableText(agg)}。`;
   return { summary, suggestions, source: 'template' };
 }
 
