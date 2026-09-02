@@ -6,6 +6,18 @@ export function isEngine(s: string): s is Engine {
   return (ENGINES as readonly string[]).includes(s);
 }
 
+/** `--engines openai,gemini` を解釈する。未指定なら全エンジン（scan と add で同じ解釈にするため共通化） */
+export function parseEngines(value: string | undefined): Engine[] {
+  if (value === undefined) return [...ENGINES];
+  const out: Engine[] = [];
+  for (const e of value.split(',').map((s) => s.trim()).filter(Boolean)) {
+    if (!isEngine(e)) throw new Error(`不明なエンジン: ${e}（指定できるのは ${ENGINES.join(', ')}）`);
+    if (!out.includes(e)) out.push(e);
+  }
+  if (out.length === 0) throw new Error('--engines が空です');
+  return out;
+}
+
 /** 表示名。手動取り込み（Google AI Overviews など）のエンジン名も含む */
 const ENGINE_LABELS: Record<string, string> = {
   openai: 'ChatGPT',

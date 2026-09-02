@@ -9,7 +9,7 @@ import { costUsd, estimateCallUsd, estimateScanCost, modelFor, pricingFor, toJpy
 import { confirm } from '../lib/prompt.js';
 import { errorMessage, redact, redactDeep } from '../lib/redact.js';
 import { assertDate, ensureDir, newRunDir, rel, todayLocal, writeJson } from '../lib/runs.js';
-import { ENGINES, engineLabel, isEngine, type Engine, type Question, type RawAnswer } from '../lib/types.js';
+import { engineLabel, parseEngines, type Engine, type Question, type RawAnswer } from '../lib/types.js';
 import { createProvider } from '../providers/index.js';
 import { describeLocation, searchLocationFor, type SearchLocation } from '../providers/location.js';
 import type { Provider } from '../providers/types.js';
@@ -42,18 +42,6 @@ export interface ScanMeta {
   searchLocation?: SearchLocation;
   estimate: { usd: number; jpy: number; maxCostJpy: number; usdJpy: number };
   actual?: { usd: number; jpy: number; ok: number; error: number; skipped: number; extractUsd?: number };
-}
-
-function parseEngines(value: string | undefined): Engine[] {
-  if (!value) return [...ENGINES];
-  const list = value.split(',').map((s) => s.trim()).filter(Boolean);
-  const out: Engine[] = [];
-  for (const e of list) {
-    if (!isEngine(e)) throw new Error(`不明なエンジン: ${e}（指定できるのは ${ENGINES.join(', ')}）`);
-    if (!out.includes(e)) out.push(e);
-  }
-  if (out.length === 0) throw new Error('--engines が空です');
-  return out;
 }
 
 function id(engine: Engine, q: Question, r: number): string {

@@ -27,7 +27,64 @@ cp .env.example .env   # API キーを記入
 | `PERPLEXITY_API_KEY` | Perplexity（sonar） |
 | `ANTHROPIC_API_KEY` | Claude（web search）。質問生成・抽出・改善提案にも使います |
 
-任意: `USD_JPY`（換算レート、既定 150）、`GEO_SCAN_MAX_COST`（`--max-cost` の既定値）、`OPENAI_MODEL` などモデル上書き、`PUPPETEER_EXECUTABLE_PATH`（Chrome の場所）、`GEO_SCAN_TZ`（レポートの時刻表示、既定 Asia/Tokyo）。各社 API の仕様と料金は [docs/api-notes.md](docs/api-notes.md) にまとめています。
+任意: `USD_JPY`（換算レート、既定 150）、`GEO_SCAN_MAX_COST`（`--max-cost` の既定値）、`OPENAI_MODEL` などモデル上書き、`PUPPETEER_EXECUTABLE_PATH`（Chrome の場所）、`GEO_SCAN_TZ`（レポートの時刻表示、既定 Asia/Tokyo）、`GITHUB_TOKEN`（`npm run update` で使用）。各社 API の仕様と料金は [docs/api-notes.md](docs/api-notes.md) にまとめています。
+
+## 新しい版に入れ替える（更新）
+
+### コマンドで更新する（おすすめ）
+
+```bash
+npm run update            # GitHub の main を取得して入れ替える（確認あり）
+npm run update -- --check # 何が変わるかだけ見る（入れ替えない）
+npm run update -- --yes   # 確認なしで入れ替える
+```
+
+git は使いません。GitHub から zip をダウンロードして展開し、差分だけ入れ替えます。**残すもの**は次の 4 つです。
+
+| 残るもの | 中身 |
+| --- | --- |
+| `.env` | API キーと設定 |
+| `runs/` | これまでの計測結果・レポート |
+| `config/targets/` | 診断対象（既存ファイルは上書きしません） |
+| `config/questions/` | 質問（同上） |
+
+そのほか、フォルダ直下に自分で置いたファイル（CSV やメモ）も消しません。逆に、新しい版で無くなったソースファイルは削除します（古いファイルが残って動かなくなるのを防ぐため）。入れ替え前のファイルは一時フォルダに退避し、途中で失敗したら元に戻します。`package.json` の依存が変わったときは自動で `npm install` を実行します（`--no-install` で止められます）。
+
+このリポジトリは非公開なので、**GitHub のトークンが必要です**。[Personal Access Token](https://github.com/settings/tokens) を「Contents: read」の権限で作り、`.env` に書いてください。
+
+```
+GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+```
+
+オプション: `--branch <名前>`（既定 main）、`--repo owner/name`、`--zip <ファイル>`（ダウンロード済みの zip を使う）、`--no-install`。更新後は `.geo-scan-version.json` に取得したコミットが記録されます。
+
+うまくいかないときは、下の「Zip で入れ替える」に切り替えてください。会社のネットワークでプロキシを通す場合は `NODE_USE_ENV_PROXY=1 npm run update` を試してください。
+
+### Zip で入れ替える（git も update コマンドも使わない）
+
+1. GitHub にログインした状態で <https://github.com/meguru88/geo-scan> を開き、緑の **Code** → **Download ZIP**
+2. ダウンロードした zip を展開する（`geo-scan-main` というフォルダができます）
+3. **今のフォルダから、次の 4 つを新しいフォルダにコピーする**
+   - `.env`（API キー。これが無いと動きません）
+   - `runs/`（これまでの計測結果とレポート）
+   - `config/targets/`（診断対象）
+   - `config/questions/`（質問）
+4. 今のフォルダを `geo-scan-old` などに名前を変え、新しいフォルダの名前を `geo-scan` にする
+5. ターミナルで新しいフォルダに移動して `npm install`
+6. 動作を確認できたら `geo-scan-old` を削除する
+
+古いフォルダに新しいファイルを上書きコピーするのではなく、**フォルダごと入れ替えて、残したいものだけを持っていく**のが安全です（上書きだと、新しい版で無くなったファイルが残って動かなくなることがあります）。
+
+macOS / Linux ならコマンドでもできます（`~/geo-scan` に置いている場合）。
+
+```bash
+cd ~/Downloads && unzip geo-scan-main.zip
+cp ~/geo-scan/.env geo-scan-main/
+cp -R ~/geo-scan/runs geo-scan-main/
+cp -R ~/geo-scan/config/targets ~/geo-scan/config/questions geo-scan-main/config/
+mv ~/geo-scan ~/geo-scan-old && mv geo-scan-main ~/geo-scan
+cd ~/geo-scan && npm install
+```
 
 ## 対象の設定
 
@@ -79,6 +136,8 @@ npm run add -- --slug royg --url https://roygbiv.stars.ne.jp/ --yes --max-cost 1
 
 オプション: `--name` `--industry` `--area`（推定の上書き）、`--force`（既存を上書き）、`--yes`（確認を省略）、`--runs` `--max-cost` `--engines`（続けて走る scan に渡す）。詳細は「対象の設定」を参照。
 
+`--engines openai,gemini` のように絞ると、概算費用の表示も続けて実行する scan もそのエンジンだけになります。
+
 ### 1. 質問を作る
 
 ```bash
@@ -128,6 +187,14 @@ npm run report -- meguru --no-pdf               # HTML だけ
 
 PDF 化に失敗する場合は `report.html` をブラウザで開いて「印刷 → PDF に保存」してください。Chrome の場所を `PUPPETEER_EXECUTABLE_PATH` で指定することもできます。
 
+### 5. ツール自体を更新する
+
+```bash
+npm run update
+```
+
+`.env` と `runs/`、`config/targets/`、`config/questions/` を残したまま最新版に入れ替えます。詳細は上の[「新しい版に入れ替える（更新）」](#新しい版に入れ替える更新)を参照してください。
+
 ## スコア（0〜100）
 
 | 項目 | 配点 | 計算 |
@@ -160,9 +227,10 @@ config/targets/<slug>.json      対象企業
 config/questions/<slug>.json    質問（生成 or 手書き）
 runs/<slug>/<日付>/             raw/ extracted/ manual/ meta.json aggregate.json report.html report.pdf
 runs/<slug>/<日付>/run-2/       同日の 2 回目以降
-src/commands/                   add / questions / scan / extract / importManual / report
+src/commands/                   add / questions / scan / extract / importManual / report / update
 src/providers/                  openai / gemini / perplexity / anthropic / mock / location
-src/lib/                        サイト取得・素性推定・抽出・スコア・集計・比較・HTML・PDF・費用など
+src/lib/                        サイト取得・素性推定・抽出・スコア・集計・比較・HTML・PDF・費用・更新など
+.geo-scan-version.json          npm run update で取得したコミット（自動生成）
 docs/api-notes.md               各社 API の仕様と料金メモ
 ```
 

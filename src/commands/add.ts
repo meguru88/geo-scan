@@ -9,21 +9,10 @@ import { findCompetitors, inferProfile, type ProfileOverrides, type SiteProfile 
 import { confirm } from '../lib/prompt.js';
 import { rel } from '../lib/runs.js';
 import { fetchSite } from '../lib/site.js';
-import { ENGINES, engineLabel, isEngine, type Engine, type QuestionSet, type TargetConfig } from '../lib/types.js';
+import { engineLabel, parseEngines, type QuestionSet, type TargetConfig } from '../lib/types.js';
 import { generateQuestions } from './questions.js';
 
-const USAGE = ' 使い方: npm run add -- --slug <slug> --url <URL> [--name "会社名"] [--force] [--yes]';
-
-function parseEngines(value: string | undefined): Engine[] {
-  if (!value) return [...ENGINES];
-  const out: Engine[] = [];
-  for (const e of value.split(',').map((s) => s.trim()).filter(Boolean)) {
-    if (!isEngine(e)) throw new Error(`不明なエンジン: ${e}（指定できるのは ${ENGINES.join(', ')}）`);
-    if (!out.includes(e)) out.push(e);
-  }
-  if (out.length === 0) throw new Error('--engines が空です');
-  return out;
-}
+const USAGE = ' 使い方: npm run add -- --slug <slug> --url <URL> [--name "会社名"] [--engines openai,gemini] [--force] [--yes]';
 
 /** 保存した設定と質問を画面に出す */
 function printSummary(target: TargetConfig, qs: QuestionSet, profile: SiteProfile, competitorSources: string[]): void {
@@ -117,6 +106,7 @@ export async function run(argv: string[]): Promise<void> {
   // 6. 続けて計測するか確認
   const runs = Math.max(1, Math.floor(flagNumber(args, 'runs', 3)));
   const engines = parseEngines(flagString(args, 'engines'));
+  const engineArg = flagString(args, 'engines') ? ` --engines ${engines.join(',')}` : '';
   const maxCostJpy = flagNumber(args, 'max-cost', Number(process.env.GEO_SCAN_MAX_COST) || 500);
   const estimate = estimateScanCost(engines, qs.questions.length, runs, shouldUseClaude() ? extractModel() : null);
   const estJpy = toJpy(estimate.totalUsd);
@@ -127,7 +117,7 @@ export async function run(argv: string[]): Promise<void> {
   if (estJpy > maxCostJpy) {
     const suggested = Math.ceil(estJpy / 100) * 100;
     console.log(`\n見込み費用が上限 ¥${maxCostJpy} を超えるため、計測には進みません。設定ファイルは作成済みです。`);
-    console.log(`  実行するには: npm run scan -- ${slug} --runs ${runs} --max-cost ${suggested}`);
+    console.log(`  実行するには: npm run scan -- ${slug} --runs ${runs} --max-cost ${suggested}${engineArg}`);
     console.log(`  そのあと    : npm run report -- ${slug}`);
     return;
   }
@@ -136,14 +126,13 @@ export async function run(argv: string[]): Promise<void> {
     const ok = await confirm('\nこのまま計測しますか？ [y/N] ');
     if (!ok) {
       console.log('計測は行いませんでした。設定ファイルは作成済みです。');
-      console.log(`  あとで実行するには: npm run scan -- ${slug} --runs ${runs} --max-cost ${maxCostJpy}`);
+      console.log(`  あとで実行するには: npm run scan -- ${slug} --runs ${runs} --max-cost ${maxCostJpy}${engineArg}`);
       return;
     }
   }
 
-  // 7. scan → report
-  const scanArgs = [slug, '--runs', String(runs), '--max-cost', String(maxCostJpy), '--yes'];
-  if (flagString(args, 'engines')) scanArgs.push('--engines', flagString(args, 'engines')!);
+  // 7. scan → report（費用を見積もったのと同じエンジンで測る）
+  const scanArgs = [slug, '--runs', String(runs), '--max-cost', String(maxCostJpy), '--engines', engines.join(','), '--yes'];
   await (await import('./scan.js')).run(scanArgs);
   await (await import('./report.js')).run([slug]);
 }
