@@ -1,0 +1,50 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { buildAggregate, loadExtractions, type Aggregate } from '../lib/aggregate.js';
+import { flagBool, flagString, parseArgs } from '../lib/args.js';
+import { loadQuestions, loadTarget } from '../lib/config.js';
+import { renderReport } from '../lib/html.js';
+import { htmlToPdf } from '../lib/pdf.js';
+import { assertDate, latestDate, latestRunDir, rel, writeJson } from '../lib/runs.js';
+import { getAdvice } from '../lib/suggest.js';
+import type { Question, TargetConfig } from '../lib/types.js';
+
+function aggregateFor(slug: string, date: string, target: TargetConfig, questions: Question[]): Aggregate {
+  const runDir = latestRunDir(slug, date);
+  if (!runDir) throw new Error(`runs/${slug}/${date} がありません`);
+  const { extractions, meta } = loadExtractions(slug, date, runDir);
+  if (extractions.length === 0) {
+    throw new Error(
+      `${rel(runDir)} に抽出結果がありません。npm run scan -- ${slug} または npm run extract -- ${slug} --date ${date}、あるいは npm run import-manual を先に実行してください`,
+    );
+  }
+  return buildAggregate({ slug, date, runDir, target, questions, extractions, ...(meta ? { meta } : {}) });
+}
+
+export async function run(argv: string[]): Promise<void> {
+  const args = parseArgs(argv);
+  const slug = args.positionals[0];
+  if (!slug) throw new Error('使い方: npm run report -- <slug> [--date YYYY-MM-DD] [--no-pdf]');
+  const target = loadTarget(slug);
+  const questions = loadQuestions(slug).questions;
+
+  const date = flagString(args, 'date') ? assertDate(flagString(args, 'date')!) : latestDate(slug);
+  if (!date) throw new Error(`runs/${slug} に計測結果がありません。先に npm run scan -- ${slug} を実行してください`);
+
+  const agg = aggregateFor(slug, date, target, questions);
+  writeJson(path.join(agg.runDir, 'aggregate.json'), agg);
+  console.log(`集計: ${rel(agg.runDir)}  有効回答 ${agg.overall.answers} 件（失敗 ${agg.totals.errors}、手動 ${agg.totals.manual}）`);
+  console.log(`総合スコア ${agg.overall.total} / 100  ` + agg.byEngine.map((e) => `${e.label} ${e.total}`).join('  '));
+
+  const advice = await getAdvice(agg, (l) => console.log(l));
+  const html = renderReport(agg, advice);
+  const htmlFile = path.join(agg.runDir, 'report.html');
+  fs.writeFileSync(htmlFile, html);
+  console.log(`HTML: ${rel(htmlFile)}`);
+
+  if (flagBool(args, 'no-pdf')) return;
+  const pdfFile = path.join(agg.runDir, 'report.pdf');
+  const ok = await htmlToPdf(html, pdfFile);
+  if (ok) console.log(`PDF:  ${rel(pdfFile)}`);
+  else process.exitCode = 2;
+}
