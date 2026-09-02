@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { DEFAULT_LOCATION, type SearchLocation } from '../providers/location.js';
 
 let client: Anthropic | null = null;
 
@@ -90,6 +91,105 @@ export async function askJson<T>(opts: JsonAsk): Promise<JsonAskResult<T>> {
     model: res.model,
     usage: { inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens },
   };
+}
+
+/** 動的フィルタ版（web_search_20260209）が使えるモデル: Claude 4.6 以降 */
+function supportsDynamicFiltering(model: string): boolean {
+  return /claude-(opus|sonnet)-(4-[6-9]|5)(-|$)/.test(model) || /claude-(fable|mythos)-/.test(model);
+}
+
+/** web_search ツールの定義。古い世代と haiku は基本版（20250305） */
+export function webSearchTool(model: string, location: SearchLocation = DEFAULT_LOCATION, maxUses = 3): Anthropic.ToolUnion {
+  const user_location: Anthropic.UserLocation = {
+    type: 'approximate',
+    country: location.country,
+    ...(location.city ? { city: location.city } : {}),
+    ...(location.region ? { region: location.region } : {}),
+    ...(location.timezone ? { timezone: location.timezone } : {}),
+  };
+  const override = process.env.ANTHROPIC_WEB_SEARCH_TOOL?.trim();
+  const type =
+    override === 'web_search_20250305' || override === 'web_search_20260209'
+      ? override
+      : supportsDynamicFiltering(model)
+        ? 'web_search_20260209'
+        : 'web_search_20250305';
+  return { type, name: 'web_search', max_uses: maxUses, user_location };
+}
+
+export interface WebSearchAsk {
+  model: string;
+  system: string;
+  user: string;
+  maxUses?: number;
+  maxTokens?: number;
+  /** サーバーツールが一時停止したときに続きを求める回数 */
+  maxContinuations?: number;
+}
+
+export interface WebSearchAskResult {
+  text: string;
+  model: string;
+  searches: number;
+  /** 回答が引用したドメイン（重複除去） */
+  citedDomains: string[];
+}
+
+/** 検索エラー（HTTP 200 で返る）のうち、結果が得られないもの */
+const FATAL_SEARCH_ERRORS = new Set(['too_many_requests', 'unavailable']);
+
+/** Web 検索を有効にして Claude に聞き、本文をつないで返す */
+export async function askWithWebSearch(opts: WebSearchAsk): Promise<WebSearchAskResult> {
+  const c = anthropicClient();
+  const maxContinuations = opts.maxContinuations ?? 3;
+  const tools = [webSearchTool(opts.model, DEFAULT_LOCATION, opts.maxUses ?? 3)];
+  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: opts.user }];
+  const texts: string[] = [];
+  const domains = new Set<string>();
+  let searches = 0;
+  let model = opts.model;
+
+  for (let i = 0; i <= maxContinuations; i++) {
+    const res = await c.messages.create({
+      model: opts.model,
+      max_tokens: opts.maxTokens ?? 4096,
+      system: opts.system,
+      messages,
+      tools,
+    });
+    model = res.model;
+    if (res.stop_reason === 'refusal' || res.stop_details?.type === 'refusal') {
+      throw new Error(`Claude が応答を拒否しました (${res.stop_details?.category ?? 'unknown'})`);
+    }
+    searches += res.usage.server_tool_use?.web_search_requests ?? 0;
+    for (const block of res.content) {
+      if (block.type === 'web_search_tool_result' && !Array.isArray(block.content)) {
+        const code = block.content.error_code;
+        if (FATAL_SEARCH_ERRORS.has(code)) throw new Error(`Claude の web_search が失敗しました: ${code}`);
+        continue;
+      }
+      if (block.type !== 'text') continue;
+      texts.push(block.text);
+      for (const cite of block.citations ?? []) {
+        if (cite.type !== 'web_search_result_location') continue;
+        try {
+          domains.add(new URL(cite.url).hostname.replace(/^www\./, ''));
+        } catch {
+          // URL として読めない引用は無視する
+        }
+      }
+    }
+    // サーバーツールの反復上限で止まった場合は、応答をそのまま積んで続きを求める
+    if (res.stop_reason === 'pause_turn' && i < maxContinuations) {
+      messages.push({ role: 'assistant', content: res.content });
+      continue;
+    }
+    break;
+  }
+
+  const text = texts.join('');
+  if (!text.trim()) throw new Error('Claude から本文が返りませんでした');
+  return { text, model, searches, citedDomains: [...domains] };
 }
 
 /** ```json フェンスや前後の説明文が混ざっていても JSON 部分だけを取り出して parse する */

@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { webSearchTool } from '../lib/claude.js';
 import { domainOf } from '../lib/config.js';
 import type { Citation } from '../lib/types.js';
 import type { SearchLocation } from './location.js';
@@ -6,27 +7,6 @@ import { SYSTEM_PROMPT, type AskResult, type Provider } from './types.js';
 
 const MAX_CONTINUATIONS = 3;
 const MAX_SEARCHES = 3;
-
-/** 動的フィルタ版（web_search_20260209）が使えるモデル: Claude 4.6 以降 */
-function supportsDynamicFiltering(model: string): boolean {
-  return /claude-(opus|sonnet)-(4-[6-9]|5)(-|$)/.test(model) || /claude-(fable|mythos)-/.test(model);
-}
-
-/** web_search ツールの定義。古い世代と haiku は基本版（20250305） */
-function webSearchTool(model: string, location: SearchLocation): Anthropic.ToolUnion {
-  const user_location: Anthropic.UserLocation = {
-    type: 'approximate',
-    country: location.country,
-    ...(location.city ? { city: location.city } : {}),
-    ...(location.region ? { region: location.region } : {}),
-    ...(location.timezone ? { timezone: location.timezone } : {}),
-  };
-  const override = process.env.ANTHROPIC_WEB_SEARCH_TOOL?.trim();
-  const type = override === 'web_search_20250305' || override === 'web_search_20260209'
-    ? override
-    : supportsDynamicFiltering(model) ? 'web_search_20260209' : 'web_search_20250305';
-  return { type, name: 'web_search', max_uses: MAX_SEARCHES, user_location };
-}
 
 /** 検索そのものの失敗（回答は出るが検索なし）。回答を無効にしてリトライさせる */
 const FATAL_SEARCH_ERRORS = new Set(['too_many_requests', 'unavailable']);
@@ -37,7 +17,7 @@ const FATAL_SEARCH_ERRORS = new Set(['too_many_requests', 'unavailable']);
  */
 export function createAnthropicProvider(apiKey: string, model: string, location: SearchLocation): Provider {
   const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 180_000 });
-  const tools = [webSearchTool(model, location)];
+  const tools = [webSearchTool(model, location, MAX_SEARCHES)];
 
   return {
     engine: 'anthropic',

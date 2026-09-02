@@ -1,5 +1,12 @@
 import { usdJpyRate } from './env.js';
-import type { Engine, TokenUsage } from './types.js';
+import { engineLabel, type Engine, type TokenUsage } from './types.js';
+
+const ENGINE_LABELS: Record<Engine, string> = {
+  openai: engineLabel('openai'),
+  gemini: engineLabel('gemini'),
+  perplexity: engineLabel('perplexity'),
+  anthropic: engineLabel('anthropic'),
+};
 
 /**
  * 料金表（USD）。docs/api-notes.md の調査結果に基づく（2026-09-02）。
@@ -81,6 +88,46 @@ export const ASSUMED_USAGE: Record<Engine, TokenUsage> = {
   perplexity: { inputTokens: 1500, outputTokens: 600, searches: 1 },
   anthropic: { inputTokens: 15000, outputTokens: 2000, searches: 2 },
 };
+
+export interface ScanCostRow {
+  label: string;
+  model: string;
+  calls: number;
+  perCallUsd: number;
+  subtotalUsd: number;
+}
+
+/**
+ * scan の概算費用。エンジンごとの行と合計を返す（scan の表示と add の事前確認で同じ数字を使う）。
+ * extractModelName に null を渡すと抽出（Haiku）の分を含めない。
+ */
+export function estimateScanCost(
+  engines: readonly Engine[],
+  questionCount: number,
+  runs: number,
+  extractModelName: string | null,
+): { rows: ScanCostRow[]; totalUsd: number; models: Record<string, string> } {
+  const callsPerEngine = questionCount * runs;
+  const rows: ScanCostRow[] = [];
+  const models: Record<string, string> = {};
+  let totalUsd = 0;
+  for (const e of engines) {
+    const model = modelFor(e);
+    models[e] = model;
+    const perCallUsd = estimateCallUsd(e, model);
+    const subtotalUsd = perCallUsd * callsPerEngine;
+    totalUsd += subtotalUsd;
+    rows.push({ label: ENGINE_LABELS[e], model, calls: callsPerEngine, perCallUsd, subtotalUsd });
+  }
+  if (extractModelName) {
+    const calls = callsPerEngine * engines.length;
+    const perCallUsd = estimateExtractUsd(extractModelName);
+    const subtotalUsd = perCallUsd * calls;
+    totalUsd += subtotalUsd;
+    rows.push({ label: '抽出', model: extractModelName, calls, perCallUsd, subtotalUsd });
+  }
+  return { rows, totalUsd, models };
+}
 
 export function costUsd(engine: Engine, model: string, usage: TokenUsage): number {
   const p = pricingFor(engine, model);

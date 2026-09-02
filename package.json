@@ -8,6 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "add": "tsx src/cli.ts add",
     "questions": "tsx src/cli.ts questions",
     "scan": "tsx src/cli.ts scan",
     "extract": "tsx src/cli.ts extract",

@@ -37,7 +37,8 @@ export function hasArea(text: string, target: TargetConfig): boolean {
   return [target.area, ...target.areaAliases].some((a) => a && text.includes(a));
 }
 
-async function generateWithClaude(target: TargetConfig): Promise<{ questions: Question[]; model: string }> {
+/** Claude で質問を10問生成する（add からも使う） */
+export async function generateQuestions(target: TargetConfig): Promise<{ questions: Question[]; model: string }> {
   const system =
     'あなたは中小企業のWeb集客を支援するコンサルタントです。' +
     '一般の消費者が ChatGPT や Gemini などの AI 検索に実際に打ち込みそうな、自然な日本語の質問を作ります。' +
@@ -103,7 +104,7 @@ export async function run(argv: string[]): Promise<void> {
   } else {
     if (!hasAnthropicKey()) throw new Error('ANTHROPIC_API_KEY が設定されていません（.env を確認してください）');
     console.log(`Claude (${writerModel()}) で質問を生成しています…`);
-    const g = await generateWithClaude(target);
+    const g = await generateQuestions(target);
     qs = { slug, generatedAt: new Date().toISOString(), source: 'claude', model: g.model, questions: g.questions };
   }
 
