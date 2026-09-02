@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildAggregate, loadExtractions, type Aggregate } from '../lib/aggregate.js';
 import { flagBool, flagString, parseArgs } from '../lib/args.js';
+import { buildComparison } from '../lib/compare.js';
 import { loadQuestions, loadTarget } from '../lib/config.js';
 import { renderReport } from '../lib/html.js';
 import { htmlToPdf } from '../lib/pdf.js';
@@ -24,20 +25,29 @@ function aggregateFor(slug: string, date: string, target: TargetConfig, question
 export async function run(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
   const slug = args.positionals[0];
-  if (!slug) throw new Error('使い方: npm run report -- <slug> [--date YYYY-MM-DD] [--no-pdf]');
+  if (!slug) throw new Error('使い方: npm run report -- <slug> [--date YYYY-MM-DD] [--compare YYYY-MM-DD] [--no-pdf]');
   const target = loadTarget(slug);
   const questions = loadQuestions(slug).questions;
 
   const date = flagString(args, 'date') ? assertDate(flagString(args, 'date')!) : latestDate(slug);
   if (!date) throw new Error(`runs/${slug} に計測結果がありません。先に npm run scan -- ${slug} を実行してください`);
+  const compareDate = flagString(args, 'compare') ? assertDate(flagString(args, 'compare')!) : null;
+  if (compareDate === date) throw new Error('--compare には別の日付を指定してください');
 
   const agg = aggregateFor(slug, date, target, questions);
   writeJson(path.join(agg.runDir, 'aggregate.json'), agg);
   console.log(`集計: ${rel(agg.runDir)}  有効回答 ${agg.overall.answers} 件（失敗 ${agg.totals.errors}、手動 ${agg.totals.manual}）`);
   console.log(`総合スコア ${agg.overall.total} / 100  ` + agg.byEngine.map((e) => `${e.label} ${e.total}`).join('  '));
 
+  let comparison = null;
+  if (compareDate) {
+    const before = aggregateFor(slug, compareDate, target, questions);
+    comparison = buildComparison(before, agg);
+    console.log(`比較: ${compareDate} (${before.overall.total}) → ${date} (${agg.overall.total})  差 ${comparison.overall.diff > 0 ? '+' : ''}${comparison.overall.diff}  新規 ${comparison.newlyMentioned.length} / 消失 ${comparison.lost.length}`);
+  }
+
   const advice = await getAdvice(agg, (l) => console.log(l));
-  const html = renderReport(agg, advice);
+  const html = renderReport(agg, advice, comparison);
   const htmlFile = path.join(agg.runDir, 'report.html');
   fs.writeFileSync(htmlFile, html);
   console.log(`HTML: ${rel(htmlFile)}`);

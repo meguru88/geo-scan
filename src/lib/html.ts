@@ -1,4 +1,5 @@
 import type { Aggregate, EngineScore } from './aggregate.js';
+import type { Comparison } from './compare.js';
 import { scoreLabel, type Mark } from './score.js';
 import type { Advice } from './suggest.js';
 
@@ -124,7 +125,7 @@ footer { margin-top: 40px; font-size: 11px; color: var(--muted); border-top: 1px
 }
 `;
 
-export function renderReport(agg: Aggregate, advice: Advice): string {
+export function renderReport(agg: Aggregate, advice: Advice, comparison: Comparison | null): string {
   const o = agg.overall;
   const t = agg.target;
   const runs = Math.max(0, ...Object.values(agg.runsPerEngine));
@@ -269,6 +270,40 @@ export function renderReport(agg: Aggregate, advice: Advice): string {
   </ul>
 </section>`;
 
+  const compareSection = comparison
+    ? `
+<section>
+  <h2>7. 前回との比較（${h(comparison.beforeDate)} → ${h(comparison.afterDate)}）</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>エンジン</th><th class="num">前回</th><th class="num">今回</th><th class="num">差</th></tr></thead>
+    <tbody>
+      ${comparison.byEngine
+        .map(
+          (e) => `<tr><th scope="row">${h(e.label)}</th><td class="num">${e.before ?? '-'}</td><td class="num">${e.after ?? '-'}</td><td class="num ${e.diff === null ? '' : e.diff > 0 ? 'diff-up' : e.diff < 0 ? 'diff-down' : ''}">${e.diff === null ? '-' : (e.diff > 0 ? '+' : '') + e.diff}</td></tr>`,
+        )
+        .join('')}
+      <tr class="row-total"><th scope="row">総合</th><td class="num">${comparison.overall.before}</td><td class="num">${comparison.overall.after}</td><td class="num ${comparison.overall.diff > 0 ? 'diff-up' : comparison.overall.diff < 0 ? 'diff-down' : ''}">${(comparison.overall.diff > 0 ? '+' : '') + comparison.overall.diff}</td></tr>
+    </tbody>
+  </table></div>
+  <p class="legend">言及率 ${pct(comparison.mentionRate.before)} → ${pct(comparison.mentionRate.after)}、自社サイト引用率 ${pct(comparison.citeRate.before)} → ${pct(comparison.citeRate.after)}</p>
+  <h3>新しく出るようになった質問</h3>
+  ${
+    comparison.newlyMentioned.length
+      ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>質問</th><th>エンジン</th><th style="text-align:center">前回 → 今回</th></tr></thead><tbody>${comparison.newlyMentioned
+          .map((c) => `<tr><td class="num">${c.no}</td><td>${h(c.text)}</td><td>${h(c.label)}</td><td style="text-align:center"><span class="${markClass(c.before)}">${c.before}</span> → <span class="${markClass(c.after)}">${c.after}</span></td></tr>`)
+          .join('')}</tbody></table></div>`
+      : '<p class="muted">新しく出るようになった質問はありません。</p>'
+  }
+  ${
+    comparison.lost.length
+      ? `<h3>出なくなった質問</h3><div class="table-wrap"><table><thead><tr><th>#</th><th>質問</th><th>エンジン</th><th style="text-align:center">前回 → 今回</th></tr></thead><tbody>${comparison.lost
+          .map((c) => `<tr><td class="num">${c.no}</td><td>${h(c.text)}</td><td>${h(c.label)}</td><td style="text-align:center"><span class="${markClass(c.before)}">${c.before}</span> → <span class="${markClass(c.after)}">${c.after}</span></td></tr>`)
+          .join('')}</tbody></table></div>`
+      : ''
+  }
+</section>`
+    : '';
+
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -286,6 +321,7 @@ ${competitors}
 ${domains}
 ${suggestions}
 ${methodology}
+${compareSection}
 <footer>geo-scan による AI 検索露出診断 / ${h(t.name)} / ${h(agg.date)}</footer>
 </div>
 </body>
