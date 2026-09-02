@@ -1,0 +1,31 @@
+{
+  "name": "geo-scan",
+  "version": "0.1.0",
+  "private": true,
+  "description": "中小企業サイトがAI検索（ChatGPT / Gemini / Perplexity / Claude）で「おすすめ」として出てくるかを計測し、スコアと改善提案をPDFレポートにするCLI",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "questions": "tsx src/cli.ts questions",
+    "scan": "tsx src/cli.ts scan",
+    "extract": "tsx src/cli.ts extract",
+    "import-manual": "tsx src/cli.ts import-manual",
+    "report": "tsx src/cli.ts report",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.123.0",
+    "@google/genai": "^2.20.0",
+    "openai": "^7.9.0",
+    "puppeteer": "^25.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.0"
+  }
+}
