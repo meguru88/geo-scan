@@ -37,7 +37,7 @@ export function createAnthropicProvider(apiKey: string, model: string): Provider
       for (let i = 0; i <= MAX_CONTINUATIONS; i++) {
         const res = await client.messages.create({ model, max_tokens: 4096, system: SYSTEM_PROMPT, messages, tools });
         responses.push(res);
-        if (res.stop_reason === 'refusal') {
+        if (res.stop_reason === 'refusal' || res.stop_details?.type === 'refusal') {
           throw new Error(`Claude が応答を拒否しました (${res.stop_details?.category ?? 'unknown'})`);
         }
         // サーバーツールの反復上限で一時停止した場合は、応答をそのまま積んで同じ tools で続きを求める

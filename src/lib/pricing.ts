@@ -22,6 +22,7 @@ export const PRICING: Record<string, ModelPricing> = {
   'gpt-4.1-mini': { inputPerMTok: 0.4, outputPerMTok: 1.6, searchFeeUsd: 0.01, searchFeeUnit: 'search', note: 'web search $10/1K calls ＋ 8,000 入力トークン固定' },
   // Google Gemini: Gemini 3 系は検索クエリ単位 $14/1K（月 5,000 クエリ無料）、2.5 系はプロンプト単位 $35/1K（Flash は 1 日 1,500 回無料）
   'gemini-3.5-flash': { inputPerMTok: 1.5, outputPerMTok: 9.0, searchFeeUsd: 0.014, searchFeeUnit: 'search', note: 'grounding $14/1K クエリ（月 5,000 クエリまで無料）' },
+  'gemini-3.6-flash': { inputPerMTok: 0.75, outputPerMTok: 3.75, searchFeeUsd: 0.014, searchFeeUnit: 'search', note: 'grounding $14/1K クエリ、2026-12-31 まで導入価格（Gemini アプリの既定になったとの情報あり）' },
   'gemini-3.7-flash': { inputPerMTok: 0.75, outputPerMTok: 3.75, searchFeeUsd: 0.014, searchFeeUnit: 'search', note: 'grounding $14/1K クエリ、2026-12-31 まで導入価格' },
   'gemini-3.5-flash-lite': { inputPerMTok: 0.3, outputPerMTok: 2.5, searchFeeUsd: 0.014, searchFeeUnit: 'search', note: 'grounding $14/1K クエリ' },
   'gemini-3.1-pro-preview': { inputPerMTok: 2.0, outputPerMTok: 12.0, searchFeeUsd: 0.014, searchFeeUnit: 'search', note: 'grounding $14/1K クエリ' },

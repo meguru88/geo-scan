@@ -64,7 +64,7 @@ export async function askJson<T>(opts: JsonAsk): Promise<JsonAskResult<T>> {
     res = await c.messages.create({ ...base, ...(opts.effort ? { output_config: outputConfig } : {}) });
   }
 
-  if (res.stop_reason === 'refusal') {
+  if (res.stop_reason === 'refusal' || res.stop_details?.type === 'refusal') {
     throw new Error(`Claude が応答を拒否しました (${res.stop_details?.category ?? 'unknown'})`);
   }
   if (res.stop_reason === 'max_tokens') {

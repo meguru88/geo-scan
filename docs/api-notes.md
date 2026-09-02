@@ -43,7 +43,8 @@ geo-scan の 4 エンジンをどう呼ぶか、引用がどう返るか、い�
 - `groundingChunks[].web.uri` は `https://vertexaisearch.cloud.google.com/grounding-api-redirect/...` のリダイレクト URL で実 URL ではない。`web.title` が実質ホスト名（例 `meguru-kaitori.jp`）。SDK 型の `web.domain` は「Gemini API では非対応」。geo-scan は title をドメインとして使う。
 - `groundingSupports[].segment.startIndex/endIndex` は UTF-8 バイト位置（JS の文字位置ではない）。
 - Gemini 3 系は thinking モデルで `thoughtsTokenCount` が出力単価で課金される。
-- 料金: `gemini-3.5-flash` in $1.50 / out $9.00。グラウンディングは **Gemini 3 系: 検索クエリ単位で $14/1,000、月 5,000 クエリまで無料（Gemini 3 系合算）**。Gemini 2.5 系は **プロンプト単位で $35/1,000、Flash 系は 1 日 1,500 回まで無料**。検索で取得したコンテキストは入力トークンに課金されない。代替: `gemini-3.7-flash`（2026-12-31 まで $0.75/$3.75）、`gemini-2.5-flash`（$0.30/$2.50）。
+- 料金: `gemini-3.5-flash` in $1.50 / out $9.00。グラウンディングは **Gemini 3 系: 検索クエリ単位で $14/1,000、月 5,000 クエリまで無料（Gemini 3 系合算）**。Gemini 2.5 系は **プロンプト単位で $35/1,000、Flash 系は 1 日 1,500 回まで無料**。検索で取得したコンテキストは入力トークンに課金されない。代替: `gemini-3.6-flash` / `gemini-3.7-flash`（2026-12-31 まで $0.75/$3.75、以降 $1.50/$7.50）、`gemini-2.5-flash`（$0.30/$2.50）。
+- 既定を `gemini-3.5-flash` にしたのは公式 SDK サンプルとクックブックの既定モデルだから。検証では「Gemini アプリの既定は 2026-07-21 に 3.6 Flash に変わった」という検索抜粋もあった（公式ページ未確認）。消費者との一致を優先するなら `GEMINI_MODEL=gemini-3.6-flash`（安い）に切り替える。
 - `generateContent` は「Legacy」扱いになり Interactions API（`ai.interactions.create`）が推奨に変わっているが、discovery 上は現役で廃止日はない。
 - 確認元: generativelanguage.googleapis.com の discovery（v1beta rev 20260831）、js-genai `src/types.ts`・sdk-samples、Google Cloud 料金ページ。ai.google.dev は取得不可。
 
@@ -53,7 +54,7 @@ geo-scan の 4 エンジンをどう呼ぶか、引用がどう返るか、い�
 - リクエスト: `{ model:"sonar", messages:[{role:"system"},{role:"user"}], web_search_options:{ search_context_size:"medium", user_location:{ country:"JP", region:"Osaka", city:"Osaka" } }, max_tokens }`
 - レスポンス: `choices[0].message.content`（文字列）、`search_results[]`（主）、`citations[]`（URL 文字列、後方互換）。`usage.cost.total_cost` にサーバー計算の USD が入るので geo-scan はそれを実費として採用する。
 - `/chat/completions`（Sonar API）は「非推奨だが提供継続、廃止日未定」で、Agent API（`POST /v1/agent`、`model:"perplexity/sonar"`、`tools:[{type:"web_search"}]`）が新規推奨。移行時は provider ファイルの差し替えだけで済む構成にしてある。
-- 料金 ※snippet: `sonar` in $1 / out $1 ＋ リクエスト料 $5（low）/ $8（medium）/ $12（high）per 1,000。`sonar-pro` は $3/$15 ＋ $6/$10/$14。`sonar-reasoning` は 2025-12-15 に廃止済み。
+- 料金 ※snippet: `sonar` in $1 / out $1 ＋ リクエスト料 $5（low）/ $8（medium）/ $12（high）per 1,000。`sonar-pro` は $3/$15 ＋ $6/$10/$14。`web_search_options.search_type:"pro"`（Pro Search）を付けるとリクエスト料が $14〜22/1,000 に上がるので付けない。`sonar-reasoning` は 2025-12-15 に廃止済み。無料枠なし（プリペイド課金）。
 - 確認元: 公式 SDK 0.38.5 の生成型 `src/generated/api.ts`、perplexityai/api-platform-developers の移行ガイド。docs.perplexity.ai と api.perplexity.ai は取得不可。
 
 ## Anthropic Claude（web_search サーバーツール）
@@ -62,7 +63,7 @@ geo-scan の 4 エンジンをどう呼ぶか、引用がどう返るか、い�
 - ツール版: `web_search_20250305`（基本）、`web_search_20260209`（動的フィルタ、Claude 4.6 以降）、`web_search_20260318`（`response_inclusion` 追加）。`claude-haiku-4-5` は programmatic tool calling 非対応のため 20260209 を使うなら `allowed_callers:["direct"]` が必要 → geo-scan は haiku のとき 20250305 を使う。
 - レスポンス: `server_tool_use` → `web_search_tool_result`（`content` が配列なら結果 `{url,title,encrypted_content,page_age}`、オブジェクトならエラー `{error_code}`。HTTP は 200）→ `text` ブロック（`citations[]` に `web_search_result_location {url,title,cited_text,encrypted_index}`）。
 - `stop_reason:"pause_turn"` なら assistant の content をそのまま積んで同じ tools で再送（geo-scan は最大 3 回）。usage は全リクエスト分を合算。
-- Sonnet 5 の制約: temperature 等の変更は 400、`thinking:{type:"enabled"}` は 400（adaptive が既定）、prefill 不可、`stop_reason:"refusal"` あり。トークナイザが変わり同じ文章で Sonnet 4.6 より約 30% 多い。
+- Sonnet 5 の制約: temperature 等の変更は 400、`thinking:{type:"enabled"}` は 400（adaptive が既定）、prefill 不可。拒否は `stop_reason:"refusal"` と `stop_details:{type:"refusal",category}` の両方を見る（HTTP は 200）。トークナイザが変わり同じ文章で Sonnet 4.6 より約 30% 多い。
 - 料金: `claude-sonnet-5` in $2 / out $10（値上げは中止で恒久）、web search $10/1,000 searches（エラー時は課金なし）、検索結果は入力トークンとして課金（反復のたびに再カウントされるので `max_uses` で抑える）。`claude-haiku-4-5` $1/$5（抽出用）、`claude-opus-5` $5/$25。
 - 確認元: platform.claude.com の web-search-tool.md / about-claude/pricing.md / models/overview.md / sonnet-5、anthropic-sdk-typescript `messages.ts`。
 
