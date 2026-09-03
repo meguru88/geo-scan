@@ -54,6 +54,11 @@ export interface TargetConfig {
     latitude?: number;
     longitude?: number;
   };
+  /**
+   * 改善提案の前に掲載の有無を確かめる第三者サイト（任意）。
+   * 省略すると Google ビジネスプロフィール ＋ 業種に応じた主要サイト（不動産なら SUUMO / LIFULL HOME'S / at home など）
+   */
+  listingSites?: string[];
 }
 
 export interface Question {

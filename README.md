@@ -124,6 +124,8 @@ npm run add -- --slug royg --url https://roygbiv.stars.ne.jp/ --name "ヘルパ�
 
 検索エンジンに渡す「利用者の位置」は既定で国（JP）だけです。市区町村まで渡したい場合は `"searchLocation": { "city": "Osaka", "region": "Osaka", "latitude": 34.6937, "longitude": 135.5023 }` を追加してください（地域名なしの質問まで地域に寄るので、計測の意図に合わせて選びます。レポートの計測方法欄に記載されます）。
 
+改善提案の前に「どの第三者サイトに掲載済みか」を確かめるサイトは、業種から自動で選びます（不動産なら SUUMO / LIFULL HOME'S / at home、買取ならヒカカク！/ おいくら / ウリドキ など。Google ビジネスプロフィールは常に含む）。変えたいときは `"listingSites": ["SUUMO", "Yahoo!不動産", "Google ビジネスプロフィール"]` を追加してください（最大 6 件）。
+
 ## コマンド
 
 ### 0. 対象を追加する
@@ -150,7 +152,7 @@ npm run batch -- --engines openai --runs 3 --max-cost 1000 --max-total-cost 3000
 - **失敗した社はスキップ**して次に進みます（サイトが取得できない、既存の slug を `--force` なしで指定した、PDF 化に失敗した、など）。scan の途中で失敗した社の実費も `meta.json` から拾って合計に入れます
 - 最後に成功・失敗・未実行の一覧と、成功した社の `report.pdf` のパスを一覧表示します。失敗が 1 社でもあれば終了コードは 1 です
 - `--yes` を付けると最初の確認を省略します（各社の確認は常に省略）。`--force` は全社に効きます。CSV は `--file <パス>` か位置引数でも指定できます
-- 社数が多いときは `--engines openai` などで絞ると 1 社あたりの費用が下がります。サイト解析・質問生成・改善提案の Claude 呼び出しは費用の集計に含みません（`add` と同じ）
+- 社数が多いときは `--engines openai` などで絞ると 1 社あたりの費用が下がります。費用の集計は scan・抽出・掲載確認・改善提案の実費で、サイト解析・質問生成の Claude 呼び出しは含みません（`add` と同じ）
 
 `config/batch.csv` は顧客リストなので git には入りません（`.gitignore` 済み）。サンプルは [samples/batch.csv](samples/batch.csv)。
 
@@ -197,9 +199,14 @@ npm run report -- meguru                        # 最新日
 npm run report -- meguru --date 2026-09-02 --run 1
 npm run report -- meguru --compare 2026-09-01   # 指定日との Before/After
 npm run report -- meguru --no-pdf               # HTML だけ
+npm run report -- meguru --max-cost 1000        # 掲載確認・改善提案の Claude 呼び出しを含めた上限
 ```
 
 `runs/<slug>/<日付>/report.html` と `report.pdf`（run-2 以降はその run のディレクトリ）を出力します。内容: 表紙（総合スコア・一言サマリー）、エンジン別スコア、質問別 ○△×、代わりに出てきた業者 Top5 と理由、引用元ドメイン Top10、改善提案 3 点（Claude が結果を読んで生成）、計測方法、`--compare` 時は前回との差分と新しく出るようになった質問。比較は両日で計測したエンジンだけで総合を再計算し、途中で質問文を変えた質問は比較から外します。
+
+- **掲載状況の確認**: 改善提案を作る前に、対象企業が主要な第三者サイト（業種に応じて SUUMO / LIFULL HOME'S / at home、ヒカカク！ など。Google ビジネスプロフィールは常に）に掲載済みかを Claude の Web 検索で確かめ、掲載済みのサイトには「新規申込」ではなく「掲載内容の追記・更新（地域名・事情別の対応・日付つきの実績）」を提案します。結果は `listings.json` に残り、同じ run で `report` を再実行しても検索し直しません（`--recheck-listings` でやり直し、`--no-listings` で省略）。確認先は `config/targets/<slug>.json` の `listingSites` で変えられます
+- **費用の上限**: 掲載確認（既定 4 サイトでおよそ 20 円）と改善提案（およそ 10 円）の Claude 呼び出しは、計測と抽出の実費に足して `--max-cost`（既定 500 円。`add` / `batch` からは同じ値が渡ります）に収めます。超える見込みなら掲載確認を省略し、それでも足りなければ改善提案はテンプレートになります（画面に理由と、実行に必要な `--max-cost` を表示します）
+- **既存の PDF は消しません**: 同じ run に `report.html` / `report.pdf` が既にあれば、`report-2.html` / `report-2.pdf` のように番号を付けて出力します（配布済みの PDF を再生成で上書きしないため）。上書きしたいときは `--overwrite`
 
 PDF 化に失敗する場合は `report.html` をブラウザで開いて「印刷 → PDF に保存」してください。Chrome の場所を `PUPPETEER_EXECUTABLE_PATH` で指定することもできます。
 

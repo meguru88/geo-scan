@@ -133,6 +133,8 @@ export interface WebSearchAskResult {
   searches: number;
   /** 回答が引用したドメイン（重複除去） */
   citedDomains: string[];
+  /** 続きを求めた分も含めた合計（費用の実費計算用） */
+  usage: { inputTokens: number; outputTokens: number };
 }
 
 /** 検索エラー（HTTP 200 で返る）のうち、結果が得られないもの */
@@ -147,6 +149,8 @@ export async function askWithWebSearch(opts: WebSearchAsk): Promise<WebSearchAsk
   const texts: string[] = [];
   const domains = new Set<string>();
   let searches = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
   let model = opts.model;
 
   for (let i = 0; i <= maxContinuations; i++) {
@@ -162,6 +166,8 @@ export async function askWithWebSearch(opts: WebSearchAsk): Promise<WebSearchAsk
       throw new Error(`Claude が応答を拒否しました (${res.stop_details?.category ?? 'unknown'})`);
     }
     searches += res.usage.server_tool_use?.web_search_requests ?? 0;
+    inputTokens += res.usage.input_tokens + (res.usage.cache_read_input_tokens ?? 0) + (res.usage.cache_creation_input_tokens ?? 0);
+    outputTokens += res.usage.output_tokens;
     for (const block of res.content) {
       if (block.type === 'web_search_tool_result' && !Array.isArray(block.content)) {
         const code = block.content.error_code;
@@ -189,7 +195,7 @@ export async function askWithWebSearch(opts: WebSearchAsk): Promise<WebSearchAsk
 
   const text = texts.join('');
   if (!text.trim()) throw new Error('Claude から本文が返りませんでした');
-  return { text, model, searches, citedDomains: [...domains] };
+  return { text, model, searches, citedDomains: [...domains], usage: { inputTokens, outputTokens } };
 }
 
 /** ```json フェンスや前後の説明文が混ざっていても JSON 部分だけを取り出して parse する */
