@@ -6,7 +6,7 @@ import { hasAnthropicKey, isMock } from '../lib/env.js';
 import { rel } from '../lib/runs.js';
 import type { Question, QuestionSet, TargetConfig } from '../lib/types.js';
 
-const QUESTION_COUNT = 10;
+export const QUESTION_COUNT = 10;
 
 const SCHEMA = {
   type: 'object',

@@ -24,7 +24,15 @@ function aggregateFor(slug: string, date: string, run: number | undefined, targe
   return buildAggregate({ slug, date, runDir, target, questions, extractions, ...(meta ? { meta } : {}) });
 }
 
-export async function run(argv: string[]): Promise<void> {
+/** report の結果（add / batch が PDF のパスを受け取る） */
+export interface ReportResult {
+  runDir: string;
+  htmlFile: string;
+  /** PDF 化に失敗した・--no-pdf のときは null */
+  pdfFile: string | null;
+}
+
+export async function run(argv: string[]): Promise<ReportResult> {
   const args = parseArgs(argv);
   const slug = args.positionals[0];
   if (!slug) throw new Error('使い方: npm run report -- <slug> [--date YYYY-MM-DD] [--run N] [--compare YYYY-MM-DD] [--no-pdf]');
@@ -64,9 +72,10 @@ export async function run(argv: string[]): Promise<void> {
       fs.unlinkSync(pdfFile);
       console.log(`--no-pdf のため古い ${rel(pdfFile)} を削除しました`);
     }
-    return;
+    return { runDir: agg.runDir, htmlFile, pdfFile: null };
   }
   const ok = await htmlToPdf(html, pdfFile);
   if (ok) console.log(`PDF:  ${rel(pdfFile)}`);
   else process.exitCode = 2;
+  return { runDir: agg.runDir, htmlFile, pdfFile: ok ? pdfFile : null };
 }

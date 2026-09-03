@@ -137,6 +137,23 @@ npm run add -- --slug royg --url https://roygbiv.stars.ne.jp/ --yes --max-cost 1
 
 `--engines openai,gemini` のように絞ると、概算費用の表示も続けて実行する scan もそのエンジンだけになります。
 
+### 0-2. まとめて診断する（batch）
+
+```bash
+cp samples/batch.csv config/batch.csv   # slug,url,name を 1 社 1 行で書く
+npm run batch -- --engines openai --runs 3 --max-cost 1000 --max-total-cost 3000 --yes
+```
+
+`config/batch.csv`（列: `slug, url, name`。任意で `industry`, `area`）を読み、各行に対して `add` を上から順番に実行します（サイト解析 → 質問生成 → scan → report）。始める前に全行を検証し、社数と概算費用を表示して確認します。
+
+- **費用の上限**: 1 社ごとの実費（scan と抽出）を積み上げ、`--max-total-cost`（既定 3,000 円。`.env` の `GEO_SCAN_MAX_TOTAL_COST` で変更可）を超えた時点で止まり、残りの社は「未実行」になります。1 社ごとの上限は `--max-cost` です（各社の `add` にそのまま渡します）。実費が確定するのは 1 社が終わったときなので、合計は上限を最大 1 社ぶん超えることがあります
+- **失敗した社はスキップ**して次に進みます（サイトが取得できない、既存の slug を `--force` なしで指定した、PDF 化に失敗した、など）。scan の途中で失敗した社の実費も `meta.json` から拾って合計に入れます
+- 最後に成功・失敗・未実行の一覧と、成功した社の `report.pdf` のパスを一覧表示します。失敗が 1 社でもあれば終了コードは 1 です
+- `--yes` を付けると最初の確認を省略します（各社の確認は常に省略）。`--force` は全社に効きます。CSV は `--file <パス>` か位置引数でも指定できます
+- 社数が多いときは `--engines openai` などで絞ると 1 社あたりの費用が下がります。サイト解析・質問生成・改善提案の Claude 呼び出しは費用の集計に含みません（`add` と同じ）
+
+`config/batch.csv` は顧客リストなので git には入りません（`.gitignore` 済み）。サンプルは [samples/batch.csv](samples/batch.csv)。
+
 ### 1. 質問を作る
 
 ```bash
@@ -224,9 +241,10 @@ npm run typecheck && npm test
 ```
 config/targets/<slug>.json      対象企業
 config/questions/<slug>.json    質問（生成 or 手書き）
+config/batch.csv                一括診断の対象リスト（slug,url,name。git には入れない）
 runs/<slug>/<日付>/             raw/ extracted/ manual/ meta.json aggregate.json report.html report.pdf
 runs/<slug>/<日付>/run-2/       同日の 2 回目以降
-src/commands/                   add / questions / scan / extract / importManual / report / update
+src/commands/                   add / batch / questions / scan / extract / importManual / report / update
 src/providers/                  openai / gemini / perplexity / anthropic / mock / location
 src/lib/                        サイト取得・素性推定・抽出・スコア・集計・比較・HTML・PDF・費用・更新など
 .geo-scan-version.json          npm run update で取得したコミット（自動生成）
