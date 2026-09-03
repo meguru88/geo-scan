@@ -27,7 +27,7 @@ cp .env.example .env   # API キーを記入
 | `PERPLEXITY_API_KEY` | Perplexity（sonar） |
 | `ANTHROPIC_API_KEY` | Claude（web search）。質問生成・抽出・改善提案にも使います |
 
-任意: `USD_JPY`（換算レート、既定 150）、`GEO_SCAN_MAX_COST`（`--max-cost` の既定値）、`OPENAI_MODEL` などモデル上書き、`PUPPETEER_EXECUTABLE_PATH`（Chrome の場所）、`GEO_SCAN_TZ`（レポートの時刻表示、既定 Asia/Tokyo）、`GITHUB_TOKEN`（`npm run update` で使用）。各社 API の仕様と料金は [docs/api-notes.md](docs/api-notes.md) にまとめています。
+任意: `USD_JPY`（換算レート、既定 150）、`GEO_SCAN_MAX_COST`（`--max-cost` の既定値）、`OPENAI_MODEL` などモデル上書き、`PUPPETEER_EXECUTABLE_PATH`（Chrome の場所）、`GEO_SCAN_TZ`（レポートの時刻表示、既定 Asia/Tokyo）、`GITHUB_TOKEN`（`npm run update` で、リポジトリを非公開にしている場合のみ）。各社 API の仕様と料金は [docs/api-notes.md](docs/api-notes.md) にまとめています。
 
 ## 新しい版に入れ替える（更新）
 
@@ -50,19 +50,18 @@ git は使いません。GitHub から zip をダウンロードして展開し�
 
 そのほか、フォルダ直下に自分で置いたファイル（CSV やメモ）も消しません。逆に、新しい版で無くなったソースファイルは削除します（古いファイルが残って動かなくなるのを防ぐため）。入れ替え前のファイルは一時フォルダに退避し、途中で失敗したら元に戻します。`package.json` の依存が変わったときは自動で `npm install` を実行します（`--no-install` で止められます）。
 
-このリポジトリは非公開なので、**GitHub のトークンが必要です**。[Personal Access Token](https://github.com/settings/tokens) を「Contents: read」の権限で作り、`.env` に書いてください。
-
-```
-GITHUB_TOKEN=ghp_xxxxxxxxxxxx
-```
+設定は要りません。`npm run update` だけで動きます。
 
 オプション: `--branch <名前>`（既定 main）、`--repo owner/name`、`--zip <ファイル>`（ダウンロード済みの zip を使う）、`--no-install`。更新後は `.geo-scan-version.json` に取得したコミットが記録されます。
 
 うまくいかないときは、下の「Zip で入れ替える」に切り替えてください。会社のネットワークでプロキシを通す場合は `NODE_USE_ENV_PROXY=1 npm run update` を試してください。
 
+> **補足: リポジトリを非公開（private）にしている場合**
+> 認証なしでは zip を取得できず「見つかりません」というエラーになります。[Personal Access Token](https://github.com/settings/tokens) を「Contents: read」の権限で作り、`.env` に `GITHUB_TOKEN=ghp_xxxx` と書いてください。公開リポジトリなら不要です（書いてあっても動きます）。
+
 ### Zip で入れ替える（git も update コマンドも使わない）
 
-1. GitHub にログインした状態で <https://github.com/meguru88/geo-scan> を開き、緑の **Code** → **Download ZIP**
+1. <https://github.com/meguru88/geo-scan> を開き、緑の **Code** → **Download ZIP**（非公開にしている場合は GitHub にログインした状態で）
 2. ダウンロードした zip を展開する（`geo-scan-main` というフォルダができます）
 3. **今のフォルダから、次の 4 つを新しいフォルダにコピーする**
    - `.env`（API キー。これが無いと動きません）

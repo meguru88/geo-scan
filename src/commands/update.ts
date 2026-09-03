@@ -58,8 +58,8 @@ function githubToken(): string | undefined {
 }
 
 const TOKEN_HINT =
-  'このリポジトリが非公開の場合は、GitHub の Personal Access Token（Contents の read 権限）を .env に GITHUB_TOKEN=ghp_… と書いてください。' +
-  'または zip を手でダウンロードして npm run update -- --zip <ファイル> を実行してください';
+  'リポジトリが非公開の場合は、GitHub の Personal Access Token（Contents の read 権限）を .env に GITHUB_TOKEN=ghp_… と書いてください' +
+  '（公開リポジトリなら不要です）';
 
 async function tryDownload(url: string, token: string | undefined): Promise<Buffer> {
   const headers: Record<string, string> = { 'user-agent': 'geo-scan-update' };
@@ -79,19 +79,20 @@ async function tryDownload(url: string, token: string | undefined): Promise<Buff
 
 async function downloadZip(repo: string, branch: string): Promise<Buffer> {
   const token = githubToken();
-  // トークンがあれば API 経由（非公開リポジトリの正規の取得方法）。
-  // 失敗しても codeload を試す（環境によってどちらか一方しか通らないことがある）
-  const urls = token
-    ? [`https://api.github.com/repos/${repo}/zipball/${branch}`, `https://codeload.github.com/${repo}/zip/refs/heads/${branch}`]
-    : [`https://codeload.github.com/${repo}/zip/refs/heads/${branch}`];
+  const api = `https://api.github.com/repos/${repo}/zipball/${branch}`;
+  const codeload = `https://codeload.github.com/${repo}/zip/refs/heads/${branch}`;
+  // 公開リポジトリなら認証なしで取れる。トークンがあるときだけ API 経由（非公開リポジトリの
+  // 正規の取得方法）を先に試し、期限切れなどで失敗したら最後に認証なしでも取りに行く
+  const attempts: { url: string; token?: string }[] = token ? [{ url: api, token }, { url: codeload, token }, { url: codeload }] : [{ url: codeload }];
 
   const failures: string[] = [];
-  for (const url of urls) {
-    console.log(`  ダウンロード中: ${url}${token ? '（GITHUB_TOKEN を使用）' : ''}`);
+  for (const attempt of attempts) {
+    const how = attempt.token ? '（GITHUB_TOKEN を使用）' : token ? '（認証なしで再試行）' : '';
+    console.log(`  ダウンロード中: ${attempt.url}${how}`);
     try {
-      return await tryDownload(url, token);
+      return await tryDownload(attempt.url, attempt.token);
     } catch (err) {
-      failures.push(`${new URL(url).hostname}: ${err instanceof Error ? err.message : String(err)}`);
+      failures.push(`${new URL(attempt.url).hostname}${how}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
