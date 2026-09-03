@@ -1,7 +1,7 @@
 import fs from 'node:fs';
-import { flagBool, parseArgs } from '../lib/args.js';
+import { flagBool, flagString, parseArgs } from '../lib/args.js';
 import { askJson, writerModel } from '../lib/claude.js';
-import { loadTarget, questionsPath, saveQuestions } from '../lib/config.js';
+import { loadQuestions, loadTarget, questionsPath, saveQuestions } from '../lib/config.js';
 import { hasAnthropicKey, isMock } from '../lib/env.js';
 import { rel } from '../lib/runs.js';
 import type { Question, QuestionSet, TargetConfig } from '../lib/types.js';
@@ -37,6 +37,22 @@ export function hasArea(text: string, target: TargetConfig): boolean {
   return [target.area, ...target.areaAliases].some((a) => a && text.includes(a));
 }
 
+const MAX_QUESTION_CHARS = 80;
+
+/**
+ * 質問を 1 問だけ差し替える（`--set <番号> "<質問文>"`）。番号はそのまま、地域名入りかは本文から判定し直す。
+ * 過去の計測結果は当時の質問文で表示されるので、差し替えは次回の scan から効く
+ */
+export function setQuestionText(qs: QuestionSet, no: number, text: string, target: TargetConfig): QuestionSet {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (!t) throw new Error('質問文が空です');
+  if (t.length > MAX_QUESTION_CHARS) throw new Error(`質問文が長すぎます（${t.length} 文字。${MAX_QUESTION_CHARS} 文字以内にしてください）`);
+  if (!Number.isInteger(no) || !qs.questions.some((q) => q.no === no)) {
+    throw new Error(`質問番号 ${no} がありません（1〜${qs.questions.length} で指定してください）`);
+  }
+  return { ...qs, questions: qs.questions.map((q) => (q.no === no ? { ...q, text: t, withArea: hasArea(t, target) } : q)) };
+}
+
 /** Claude で質問を10問生成する（add からも使う） */
 export async function generateQuestions(target: TargetConfig): Promise<{ questions: Question[]; model: string }> {
   const system =
@@ -50,8 +66,9 @@ export async function generateQuestions(target: TargetConfig): Promise<{ questio
     '',
     `この企業の見込み客が AI に聞きそうな質問を ${QUESTION_COUNT} 個作ってください。`,
     `- 地域名（${target.area} または ${target.areaAliases.join('・')}）を含む質問を 5 個、含まない質問を 5 個`,
-    '- 取扱品目・用途（例: 貴金属、時計、ブランド品、着物、遺品整理、実家の片付け）が偏らないよう散らす',
-    '- 「おすすめは？」「信頼できるのは？」「高く買ってくれるのは？」など、業者名を答えたくなる聞き方にする',
+    '- 取扱品目・用途・依頼の事情（例: 買取なら貴金属・時計・遺品整理、不動産なら相続・住み替え・空き家）が偏らないよう、業種に合わせて散らす',
+    '- 「おすすめは？」「信頼できるのは？」「選び方は？」「相場は？」など、業者名を答えたくなる聞き方にする',
+    '- 客が本当に知りたいことを聞く。客が損をしかねない聞き方（例:「査定を高めに出してくれる会社」）は避け、「適正な査定額を出してくれる会社の見分け方」のように、誠実な事業者が答えとして選ばれる聞き方にする',
     '- 検索窓に打つような短い体言止め（例:「東住吉区 出張買取 おすすめ」）も 2〜3 個混ぜる',
     '- 各質問は 40 文字以内',
     '',
@@ -88,10 +105,27 @@ function generateMock(target: TargetConfig): Question[] {
 export async function run(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
   const slug = args.positionals[0];
-  if (!slug) throw new Error('使い方: npm run questions -- <slug> [--force]');
+  if (!slug) throw new Error('使い方: npm run questions -- <slug> [--force] | --set <番号> "<質問文>"');
   const target = loadTarget(slug);
   const file = questionsPath(slug);
   const force = flagBool(args, 'force');
+
+  // 1 問だけ差し替える（JSON を手で編集しなくて済むように）
+  const setNo = flagString(args, 'set');
+  if (setNo !== undefined) {
+    const no = Number(setNo);
+    const text = args.positionals[1];
+    if (!Number.isInteger(no) || !text) throw new Error('使い方: npm run questions -- <slug> --set <番号> "新しい質問文"');
+    const before = loadQuestions(slug);
+    const qs = setQuestionText(before, no, text, target);
+    saveQuestions(qs);
+    const after = qs.questions.find((q) => q.no === no)!;
+    console.log(`Q${no} を差し替えました: ${rel(file)}`);
+    console.log(`  旧: ${before.questions.find((q) => q.no === no)!.text}`);
+    console.log(`  新: ${after.text}${after.withArea ? '' : '　(地域名なし)'}`);
+    console.log('  次回の scan からこの質問で計測します。過去の計測結果は当時の質問文のまま表示され、--compare では質問文の変更として比較から外れます');
+    return;
+  }
 
   if (fs.existsSync(file) && !force) {
     console.log(`${rel(file)} は既にあります。上書きするには --force を付けてください。`);

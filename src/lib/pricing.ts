@@ -151,6 +151,26 @@ export function estimateExtractUsd(model: string): number {
   return extractCostUsd(model, 2000, 400);
 }
 
+/** Claude（改善提案・掲載確認など writer モデル）1 回の実費。料金表にないモデルは Opus 換算 */
+export function claudeUsd(model: string, usage: TokenUsage): number {
+  const p = PRICING[model] ?? PRICING['claude-opus-5']!;
+  const tokens = (usage.inputTokens * p.inputPerMTok + usage.outputTokens * p.outputPerMTok) / 1_000_000;
+  return tokens + usage.searches * p.searchFeeUsd;
+}
+
+/**
+ * 掲載確認（Web 検索つき Claude 1 回）の概算。検索結果がコンテキストに入るので、サイト 1 つにつき入力 ~3,000 トークンを見込む。
+ * 既定（claude-opus-5 / 4 サイト）でおよそ $0.14 ≒ 20 円
+ */
+export function estimateListingCheckUsd(model: string, siteCount: number): number {
+  return claudeUsd(model, { inputTokens: 4000 + 3000 * siteCount, outputTokens: 800, searches: siteCount });
+}
+
+/** 改善提案（Claude 1 回・検索なし）の概算: 入力 ~3,000 / 出力 ~1,500 トークン */
+export function estimateAdviceUsd(model: string): number {
+  return claudeUsd(model, { inputTokens: 3000, outputTokens: 1500, searches: 0 });
+}
+
 export function toJpy(usd: number): number {
   return usd * usdJpyRate();
 }

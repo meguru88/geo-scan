@@ -4,14 +4,14 @@ import { flagBool, flagNumber, flagString, parseArgs } from '../lib/args.js';
 import { canStartNext, exceededBudget, formatBatchSummary, parseBatchCsv, type BatchResult, type BatchRow } from '../lib/batch.js';
 import { extractModel } from '../lib/claude.js';
 import { ROOT } from '../lib/config.js';
-import { hasAnthropicKey, isMock, usdJpyRate } from '../lib/env.js';
+import { defaultMaxCostJpy, hasAnthropicKey, isMock, usdJpyRate } from '../lib/env.js';
 import { shouldUseClaude } from '../lib/extract.js';
 import { estimateScanCost, toJpy, yen } from '../lib/pricing.js';
 import { confirm } from '../lib/prompt.js';
 import { errorMessage } from '../lib/redact.js';
 import { latestDate, latestRunDir, rel } from '../lib/runs.js';
 import { engineLabel, parseEngines } from '../lib/types.js';
-import { addTarget, defaultMaxCostJpy } from './add.js';
+import { addTarget } from './add.js';
 import { QUESTION_COUNT } from './questions.js';
 import type { ScanMeta } from './scan.js';
 
@@ -91,7 +91,7 @@ export async function run(argv: string[]): Promise<void> {
     const fit = perCompanyJpy > 0 ? Math.floor(maxTotalJpy / perCompanyJpy) : rows.length;
     console.log(`  注意: 全社の概算が --max-total-cost ¥${maxTotalJpy} を超えます。累計が上限に達した時点で残りは未実行になります（概算では ${fit} 社まで）`);
   }
-  console.log('  ※ 費用の集計は scan と抽出の実費です。サイト解析・質問生成・改善提案の Claude 呼び出しは含みません');
+  console.log('  ※ 費用の集計は scan・抽出・掲載確認・改善提案の実費です。サイト解析・質問生成の Claude 呼び出しは含みません');
 
   if (!yes) {
     const ok = await confirm('\nこの内容で一括診断を始めますか？ [y/N] ');

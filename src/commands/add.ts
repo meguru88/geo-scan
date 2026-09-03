@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { flagBool, flagNumber, flagString, parseArgs } from '../lib/args.js';
 import { extractModel, writerModel } from '../lib/claude.js';
 import { assertSlug, questionsPath, saveQuestions, saveTarget, targetPath } from '../lib/config.js';
-import { hasAnthropicKey, isMock, usdJpyRate } from '../lib/env.js';
+import { defaultMaxCostJpy, hasAnthropicKey, isMock, usdJpyRate } from '../lib/env.js';
 import { shouldUseClaude } from '../lib/extract.js';
 import { estimateScanCost, toJpy, yen } from '../lib/pricing.js';
 import { findCompetitors, inferProfile, type ProfileOverrides, type SiteProfile } from '../lib/profile.js';
@@ -29,11 +29,6 @@ function printSummary(target: TargetConfig, qs: QuestionSet, profile: SiteProfil
   if (competitorSources.length) console.log(`  （参照: ${competitorSources.slice(0, 5).join('、')}）`);
   console.log(`\n■ 質問 ${qs.questions.length} 問（地域名入り ${qs.questions.filter((q) => q.withArea).length} 問）`);
   for (const q of qs.questions) console.log(`  ${String(q.no).padStart(2)}. ${q.text}${q.withArea ? '' : '　(地域名なし)'}`);
-}
-
-/** `--max-cost` の既定値（.env の GEO_SCAN_MAX_COST か 500 円） */
-export function defaultMaxCostJpy(): number {
-  return Number(process.env.GEO_SCAN_MAX_COST) || 500;
 }
 
 export interface AddOptions {
@@ -167,8 +162,9 @@ export async function addTarget(opts: AddOptions): Promise<AddResult> {
   const scan = await (await import('./scan.js')).run(scanArgs);
   if (!scan) return notScanned('計測を中止しました');
   const actual = scan.meta.actual;
-  const costJpy = toJpy((actual?.usd ?? 0) + (actual?.extractUsd ?? 0));
-  const report = await (await import('./report.js')).run([slug, '--date', scan.date]);
+  // report にも同じ上限を渡す（掲載確認と改善提案の Claude 呼び出しを、計測の実費と合わせて --max-cost に収める）
+  const report = await (await import('./report.js')).run([slug, '--date', scan.date, '--max-cost', String(maxCostJpy)]);
+  const costJpy = toJpy((actual?.usd ?? 0) + (actual?.extractUsd ?? 0) + report.costUsd);
   return {
     slug,
     scanned: true,

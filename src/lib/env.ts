@@ -54,3 +54,8 @@ export function usdJpyRate(): number {
   const v = Number(process.env.USD_JPY);
   return Number.isFinite(v) && v > 0 ? v : 150;
 }
+
+/** `--max-cost` の既定値（.env の GEO_SCAN_MAX_COST か 500 円）。scan / report / add / batch で共通 */
+export function defaultMaxCostJpy(): number {
+  return Number(process.env.GEO_SCAN_MAX_COST) || 500;
+}
