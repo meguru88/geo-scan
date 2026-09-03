@@ -6,6 +6,8 @@ const USAGE = `geo-scan — AI検索での「おすすめ」露出を計測す�
 使い方:
   npm run add           -- --slug <slug> --url <URL> [--name "会社名"] [--industry "業種"] [--area "地域"]
                                   [--force] [--yes] [--runs 3] [--max-cost 1000] [--engines a,b]
+  npm run batch         [-- [config/batch.csv] [--engines a,b] [--runs 3] [--max-cost 1000]
+                                  [--max-total-cost 3000] [--force] [--yes]]
   npm run questions     -- <slug> [--force] [--mock]
   npm run scan          -- <slug> [--runs 3] [--engines openai,gemini,perplexity,anthropic]
                                   [--max-cost 500] [--date YYYY-MM-DD] [--yes] [--skip-extract]
@@ -19,6 +21,7 @@ const USAGE = `geo-scan — AI検索での「おすすめ」露出を計測す�
 /** コマンド名 → src/commands/ のファイル名 */
 const COMMANDS: Record<string, string> = {
   add: 'add',
+  batch: 'batch',
   questions: 'questions',
   scan: 'scan',
   extract: 'extract',

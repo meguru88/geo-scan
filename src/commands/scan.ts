@@ -25,6 +25,13 @@ interface Task {
   runIndex: number;
 }
 
+/** scan の結果（add / batch が費用とディレクトリを受け取る） */
+export interface ScanResult {
+  runDir: string;
+  date: string;
+  meta: ScanMeta;
+}
+
 /** runs/<slug>/<date>/meta.json */
 export interface ScanMeta {
   slug: string;
@@ -52,7 +59,8 @@ function errorRecord(base: Omit<RawAnswer, 'status' | 'error' | 'text' | 'citati
   return { ...base, status: 'error', error, text: '', citations: [], usage: { inputTokens: 0, outputTokens: 0, searches: 0 }, costUsd: 0, costJpy: 0 };
 }
 
-export async function run(argv: string[]): Promise<void> {
+/** 実行したら結果を返す。確認で中止したときは null */
+export async function run(argv: string[]): Promise<ScanResult | null> {
   const args = parseArgs(argv);
   const slug = args.positionals[0];
   if (!slug) throw new Error('使い方: npm run scan -- <slug> [--runs 3] [--engines a,b] [--max-cost 500] [--mock]');
@@ -108,7 +116,7 @@ export async function run(argv: string[]): Promise<void> {
     const ok = await confirm('この内容で実行しますか？ [y/N] ');
     if (!ok) {
       console.log('中止しました');
-      return;
+      return null;
     }
   }
 
@@ -248,7 +256,7 @@ export async function run(argv: string[]): Promise<void> {
 
   if (skipExtract) {
     console.log(`\n抽出は省略しました。後で \`npm run extract -- ${slug} --date ${date}\` を実行してください`);
-    return;
+    return { runDir, date, meta };
   }
 
   console.log(`\n■ 抽出（${useClaude ? `regex + Claude ${extractModel()}` : 'regex のみ'}）`);
@@ -257,4 +265,5 @@ export async function run(argv: string[]): Promise<void> {
   writeJson(path.join(runDir, 'meta.json'), meta);
   console.log(`■ 抽出完了: ${ex.extracted} 件 / Claude ${ex.claudeCalls} 回 / 費用 ${yen(ex.costUsd)}`);
   console.log(`\n次: npm run report -- ${slug}${date === todayLocal() ? '' : ` --date ${date}`}`);
+  return { runDir, date, meta };
 }

@@ -13,6 +13,7 @@
   },
   "scripts": {
     "add": "tsx src/cli.ts add",
+    "batch": "tsx src/cli.ts batch",
     "update": "tsx src/cli.ts update",
     "questions": "tsx src/cli.ts questions",
     "scan": "tsx src/cli.ts scan",

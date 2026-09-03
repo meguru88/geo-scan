@@ -31,20 +31,49 @@ function printSummary(target: TargetConfig, qs: QuestionSet, profile: SiteProfil
   for (const q of qs.questions) console.log(`  ${String(q.no).padStart(2)}. ${q.text}${q.withArea ? '' : '　(地域名なし)'}`);
 }
 
-export async function run(argv: string[]): Promise<void> {
-  const args = parseArgs(argv);
-  const slug = flagString(args, 'slug') ?? args.positionals[0];
-  const url = flagString(args, 'url') ?? args.positionals[1];
-  if (!slug || !url) throw new Error(`--slug と --url は必須です。\n${USAGE}`);
-  assertSlug(slug);
+/** `--max-cost` の既定値（.env の GEO_SCAN_MAX_COST か 500 円） */
+export function defaultMaxCostJpy(): number {
+  return Number(process.env.GEO_SCAN_MAX_COST) || 500;
+}
 
-  const force = flagBool(args, 'force');
-  const yes = flagBool(args, 'yes');
-  const overrides: ProfileOverrides = {
-    name: flagString(args, 'name'),
-    industry: flagString(args, 'industry'),
-    area: flagString(args, 'area'),
-  };
+export interface AddOptions {
+  slug: string;
+  url: string;
+  name?: string | undefined;
+  industry?: string | undefined;
+  area?: string | undefined;
+  /** 既存の設定・質問を上書きする */
+  force?: boolean;
+  /** 計測前の確認を省略する */
+  yes?: boolean;
+  runs?: number;
+  /** `--engines` の生の値（未指定なら全エンジン） */
+  engines?: string | undefined;
+  maxCostJpy?: number;
+}
+
+/** add の結果（batch が費用と PDF のパスを受け取るため） */
+export interface AddResult {
+  slug: string;
+  /** scan → report まで実行したか（費用上限や確認で止めた場合は false） */
+  scanned: boolean;
+  /** scan と抽出の実費（円）。計測していなければ 0 */
+  costJpy: number;
+  /** レポートを出した run ディレクトリ（ROOT からの相対） */
+  runDir: string | null;
+  /** 生成した report.pdf（ROOT からの相対）。PDF 化に失敗したら null */
+  pdfFile: string | null;
+  /** 計測に進まなかった理由 */
+  reason?: string;
+}
+
+/** サイトを読んで設定と質問を作り、続けて scan → report まで実行する（`run` と batch の共通部分） */
+export async function addTarget(opts: AddOptions): Promise<AddResult> {
+  const { slug, url } = opts;
+  assertSlug(slug);
+  const force = opts.force ?? false;
+  const yes = opts.yes ?? false;
+  const overrides: ProfileOverrides = { name: opts.name, industry: opts.industry, area: opts.area };
 
   // API を呼ぶ前に、手元だけで分かることを先に弾く
   if (isMock()) throw new Error('add は実際のサイトと Claude を使うため --mock では実行できません');
@@ -104,22 +133,24 @@ export async function run(argv: string[]): Promise<void> {
   printSummary(target, qs, profile, sources);
 
   // 6. 続けて計測するか確認
-  const runs = Math.max(1, Math.floor(flagNumber(args, 'runs', 3)));
-  const engines = parseEngines(flagString(args, 'engines'));
-  const engineArg = flagString(args, 'engines') ? ` --engines ${engines.join(',')}` : '';
-  const maxCostJpy = flagNumber(args, 'max-cost', Number(process.env.GEO_SCAN_MAX_COST) || 500);
+  const runs = Math.max(1, Math.floor(opts.runs ?? 3));
+  const engines = parseEngines(opts.engines);
+  const engineArg = opts.engines ? ` --engines ${engines.join(',')}` : '';
+  const maxCostJpy = opts.maxCostJpy ?? defaultMaxCostJpy();
   const estimate = estimateScanCost(engines, qs.questions.length, runs, shouldUseClaude() ? extractModel() : null);
   const estJpy = toJpy(estimate.totalUsd);
 
   console.log(`\n■ 計測（scan → report）の概算費用: ${yen(estimate.totalUsd)}（1ドル=${usdJpyRate()}円 / 上限 --max-cost ¥${maxCostJpy}）`);
   console.log(`  ${engines.map((e) => engineLabel(e)).join('・')} に ${qs.questions.length} 問 × ${runs} 回 = ${qs.questions.length * engines.length * runs} 回`);
 
+  const notScanned = (reason: string): AddResult => ({ slug, scanned: false, costJpy: 0, runDir: null, pdfFile: null, reason });
+
   if (estJpy > maxCostJpy) {
     const suggested = Math.ceil(estJpy / 100) * 100;
     console.log(`\n見込み費用が上限 ¥${maxCostJpy} を超えるため、計測には進みません。設定ファイルは作成済みです。`);
     console.log(`  実行するには: npm run scan -- ${slug} --runs ${runs} --max-cost ${suggested}${engineArg}`);
     console.log(`  そのあと    : npm run report -- ${slug}`);
-    return;
+    return notScanned(`見込み費用 ${yen(estimate.totalUsd)} が --max-cost ¥${maxCostJpy} を超えるため計測せず（設定は作成済み）`);
   }
 
   if (!yes) {
@@ -127,12 +158,42 @@ export async function run(argv: string[]): Promise<void> {
     if (!ok) {
       console.log('計測は行いませんでした。設定ファイルは作成済みです。');
       console.log(`  あとで実行するには: npm run scan -- ${slug} --runs ${runs} --max-cost ${maxCostJpy}${engineArg}`);
-      return;
+      return notScanned('確認で計測を見送り（設定は作成済み）');
     }
   }
 
   // 7. scan → report（費用を見積もったのと同じエンジンで測る）
   const scanArgs = [slug, '--runs', String(runs), '--max-cost', String(maxCostJpy), '--engines', engines.join(','), '--yes'];
-  await (await import('./scan.js')).run(scanArgs);
-  await (await import('./report.js')).run([slug]);
+  const scan = await (await import('./scan.js')).run(scanArgs);
+  if (!scan) return notScanned('計測を中止しました');
+  const actual = scan.meta.actual;
+  const costJpy = toJpy((actual?.usd ?? 0) + (actual?.extractUsd ?? 0));
+  const report = await (await import('./report.js')).run([slug, '--date', scan.date]);
+  return {
+    slug,
+    scanned: true,
+    costJpy,
+    runDir: rel(report.runDir),
+    pdfFile: report.pdfFile ? rel(report.pdfFile) : null,
+  };
+}
+
+export async function run(argv: string[]): Promise<void> {
+  const args = parseArgs(argv);
+  const slug = flagString(args, 'slug') ?? args.positionals[0];
+  const url = flagString(args, 'url') ?? args.positionals[1];
+  if (!slug || !url) throw new Error(`--slug と --url は必須です。\n${USAGE}`);
+
+  await addTarget({
+    slug,
+    url,
+    name: flagString(args, 'name'),
+    industry: flagString(args, 'industry'),
+    area: flagString(args, 'area'),
+    force: flagBool(args, 'force'),
+    yes: flagBool(args, 'yes'),
+    runs: flagNumber(args, 'runs', 3),
+    engines: flagString(args, 'engines'),
+    maxCostJpy: flagNumber(args, 'max-cost', defaultMaxCostJpy()),
+  });
 }

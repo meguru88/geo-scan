@@ -145,5 +145,6 @@ vite.config.ts.timestamp-*
 # geo-scan
 .env
 runs/
+config/batch.csv
 dist/
 .geo-scan-version.json
